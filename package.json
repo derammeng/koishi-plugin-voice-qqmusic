@@ -10,6 +10,14 @@
   ],
   "author": "derammeng",
   "license": "MIT",
+  "homepage": "https://github.com/derammeng/koishi-plugin-voice-qqmusic",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/derammeng/koishi-plugin-voice-qqmusic.git"
+  },
+  "bugs": {
+    "url": "https://github.com/derammeng/koishi-plugin-voice-qqmusic/issues"
+  },
   "keywords": [
     "koishi",
     "plugin",
@@ -22,16 +30,8 @@
   "peerDependencies": {
     "koishi": "^4.15.0"
   },
-  "devDependencies": {
-    "@types/node": "^20.0.0",
-    "typescript": "^5.3.0"
-  },
   "dependencies": {
     "axios": "^1.6.0"
-  },
-  "scripts": {
-    "build": "tsc",
-    "prepublishOnly": "npm run build"
   },
   "koishi": {
     "description": {
@@ -39,6 +39,18 @@
     },
     "service": {
       "required": ["http"]
+    },
+    "locales": {
+      "zh": {
+        "description": "QQ音乐点歌插件，支持语音发送和群聊私聊差异化配置",
+        "usage": "使用文档：\n1. 配置 QQ 音乐 Cookie 和 QQ 号\n2. 使用指令：点歌 <关键词>\n3. 支持群聊和私聊差异化配置",
+        "options": {
+          "cookie": "QQ 音乐 Cookie（从浏览器开发者工具复制）",
+          "uin": "QQ 号码",
+          "groupVoiceEnabled": "群聊中是否发送语音消息",
+          "privateVoiceEnabled": "私聊中是否发送语音消息"
+        }
+      }
     }
   }
 }
