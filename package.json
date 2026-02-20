@@ -1,0 +1,47 @@
+{
+  "name": "koishi-plugin-voice-qqmusic",
+  "version": "1.0.0",
+  "description": "QQ音乐点歌插件，支持语音发送和群聊私聊差异化配置",
+  "main": "lib/index.js",
+  "typings": "lib/index.d.ts",
+  "files": [
+    "lib",
+    "readme.md"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "keywords": [
+    "koishi",
+    "plugin",
+    "music",
+    "qqmusic",
+    "qq音乐",
+    "点歌",
+    "语音"
+  ],
+  "peerDependencies": {
+    "koishi": "^4.15.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0",
+    "koishi": "^4.15.0"
+  },
+  "dependencies": {
+    "axios": "^1.6.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "clean": "rimraf lib",
+    "prepublishOnly": "npm run build"
+  },
+  "koishi": {
+    "description": {
+      "zh": "QQ音乐点歌插件，支持语音发送"
+    },
+    "service": {
+      "required": ["http"]
+    }
+  }
+}
