@@ -1,6 +1,6 @@
 {
   "name": "koishi-plugin-voice-qqmusic",
-  "version": "1.0.2",
+  "version": "1.0.0",
   "description": "QQ音乐点歌插件，支持语音发送和群聊私聊差异化配置",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
