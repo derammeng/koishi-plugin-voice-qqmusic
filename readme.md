@@ -1,72 +1,17 @@
-# koishi-plugin-voice-QQmusic
+# koishi-plugin-voice-qqmusic
 
-QQ音乐点歌插件，支持语音发送和群聊私聊差异化配置。
+[![npm](https://img.shields.io/npm/v/koishi-plugin-voice-qqmusic)](https://www.npmjs.com/package/koishi-plugin-voice-qqmusic)
+[![license](https://img.shields.io/github/license/derammeng/koishi-plugin-voice-qqmusic)](./LICENSE)
 
-## 功能特性
+一个QQ 音乐点歌插件
 
-- 搜索QQ音乐歌曲
-- 支持语音消息发送
-- 群聊和私聊差异化配置
-- 可自定义搜索结果数量
-- 显示歌曲封面图片
-- 支持热门歌曲推荐
+## ✨ 功能特性
 
-## 安装
-
-```bash
-npm install koishi-plugin-voice-qqmusic
-```
-
-## 使用方法
-
-### 点歌命令
-
-```
-点歌 <歌名/歌手>
-```
-
-示例：
-- `点歌 周杰伦`
-- `点歌 稻香`
-- `qqmusic 告白气球`
-
-### 选择歌曲
-
-搜索完成后，回复数字序号（如 `1`、`2`、`3`）即可播放对应歌曲。
-
-### 热门歌曲
-
-```
-热门歌曲
-```
-
-获取QQ音乐热门榜单推荐。
-
-## 配置项
-
-| 配置项 | 类型 | 默认值 | 说明 |
-|--------|------|--------|------|
-| groupVoiceEnabled | boolean | true | 群聊中是否发送语音消息 |
-| privateVoiceEnabled | boolean | true | 私聊中是否发送语音消息 |
-| groupPageSize | number | 5 | 群聊中每页显示的歌曲数量 |
-| privatePageSize | number | 10 | 私聊中每页显示的歌曲数量 |
-| maxResults | number | 20 | 搜索结果最大返回数量 |
-| voiceTimeout | number | 30 | 语音消息超时时间（秒） |
-| showSinger | boolean | true | 是否显示歌手信息 |
-| showAlbum | boolean | true | 是否显示专辑信息 |
-
-## 注意事项
-
-1. 语音发送需要适配器支持语音消息格式
-2. 部分歌曲可能因版权原因无法播放
-3. 搜索结果缓存5分钟后自动清除
-4. 需要 `http` 服务支持
-
-## 依赖
-
-- koishi: ^4.15.0
-- axios: ^1.6.0
-
-## 许可证
-
-MIT
+-  **语音支持** - 支持 QQ 语音发送，可自定义音质
+-  **图片菜单** - 支持搜索结果图片展示（需 puppeteer）
+-  **高度自定义** - 可消息格式、歌词显示、信息展示
+-  **群聊私聊差异化** - 独立的群聊/私聊配置
+-  **个人账号支持** - 使用个人账号播放
+-  **歌词显示** - 自动获取并显示歌词
+-  **权限管理** - 黑名单/白名单/管理员系统
+-  **缓存系统** - 自动清理过期缓存文件
