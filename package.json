@@ -8,6 +8,10 @@
     "lib",
     "readme.md"
   ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
   "author": "derammeng",
   "license": "MIT",
   "homepage": "https://github.com/derammeng/koishi-plugin-voice-qqmusic",
