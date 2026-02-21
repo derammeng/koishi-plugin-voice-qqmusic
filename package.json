@@ -24,7 +24,7 @@
     "music",
     "qqmusic",
     "qq音乐",
-    "点歌",
+    "点歌"
   ],
   "peerDependencies": {
     "koishi": "^4.15.0"
