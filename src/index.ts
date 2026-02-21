@@ -1,25 +1,35 @@
 // src/index.ts
-import { Context, Schema, Service, h, Session } from 'koishi'
+/**
+ * Koishi 插件 - QQ 音乐点歌
+ * 支持搜索、播放、歌词显示、图片列表、自定义消息格式等
+ */
+
+import { Context, Schema, Service, h, Session, Logger } from 'koishi'
 import axios from 'axios'
-import * as fs from 'fs'
+import * as fs from 'fs/promises'
 import * as path from 'path'
-import { promisify } from 'util'
-import { pipeline } from 'stream'
+import { pipeline } from 'stream/promises'
+import { Readable } from 'stream'
 
-const streamPipeline = promisify(pipeline)
-
+// 声明模块扩展，使 ctx.qqMusic 可用
 declare module 'koishi' {
   interface Context {
     qqMusic: QQMusicService
   }
 }
 
-// 模板变量替换
+// ---------- 工具函数 ----------
+
+/**
+ * 模板变量替换
+ */
 function formatTemplate(template: string, vars: Record<string, string>): string {
-  return template.replace(/\{\{(\w+)\}\}/g, (match, key) => vars[key] || match)
+  return template.replace(/\{\{(\w+)\}\}/g, (match, key) => vars[key] ?? match)
 }
 
-// 下载文件
+/**
+ * 下载文件（流式）
+ */
 async function downloadFile(url: string, filePath: string, timeout: number = 30000): Promise<void> {
   const response = await axios({
     method: 'GET',
@@ -30,11 +40,39 @@ async function downloadFile(url: string, filePath: string, timeout: number = 300
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
     }
   })
-  const writer = fs.createWriteStream(filePath)
-  await streamPipeline(response.data, writer)
+  const writer = await fs.open(filePath, 'w')
+  try {
+    const writeStream = writer.createWriteStream()
+    await pipeline(Readable.from(response.data), writeStream)
+  } finally {
+    await writer.close()
+  }
 }
 
-// 构建搜索结果图片HTML
+/**
+ * HTML 转义
+ */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
+
+/**
+ * 格式化时间（秒 -> mm:ss）
+ */
+function formatTime(s: number): string {
+  const minutes = Math.floor(s / 60)
+  const seconds = Math.floor(s % 60)
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`
+}
+
+/**
+ * 生成搜索结果图片的 HTML
+ */
 function buildSongListHTML(songs: QQMusicService.SongInfo[], keyword: string): string {
   const items = songs.map((song, idx) => `
     <div class="song-item">
@@ -148,62 +186,102 @@ function buildSongListHTML(songs: QQMusicService.SongInfo[], keyword: string): s
   `
 }
 
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;')
-}
-
-function formatTime(s: number): string {
-  return `${Math.floor(s/60)}:${(s%60).toString().padStart(2,'0')}`
-}
-
+/**
+ * 将 HTML 转为图片
+ */
 async function htmlToImage(html: string, outputPath: string, ctx: Context): Promise<string | null> {
+  if (!ctx.puppeteer) {
+    ctx.logger.warn('puppeteer 服务未找到，无法生成图片')
+    return null
+  }
+  let page: any
   try {
-    if (!ctx['puppeteer']) {
-      ctx.logger.warn('puppeteer 服务未找到')
-      return null
-    }
-    
-    const page = await ctx['puppeteer'].page()
+    page = await ctx.puppeteer.page()
     await page.setViewport({ width: 800, height: 600 })
     await page.setContent(html, { waitUntil: 'networkidle0' })
-    
+
     const bodyHandle = await page.$('body')
-    const { height } = await bodyHandle.boundingBox()
+    if (!bodyHandle) return null
+    
+    const { height } = await bodyHandle.boundingBox() || { height: 600 }
+    await bodyHandle.dispose()
     await page.setViewport({ width: 800, height: Math.ceil(height) + 20 })
-    
+
     await page.screenshot({ path: outputPath, fullPage: true })
-    await page.close()
-    
     return outputPath
   } catch (error) {
     ctx.logger.error('生成图片失败:', error)
     return null
+  } finally {
+    if (page) await page.close().catch(() => {})
   }
 }
+
+// ---------- 类型定义 ----------
+
+interface RawSong {
+  mid: string
+  name: string
+  singer: Array<{ name: string }>
+  album?: { name: string }
+  interval: number
+  id: number
+  pay?: any
+  file?: {
+    size_128mp3?: number
+    size_320mp3?: number
+    size_flac?: number
+  }
+}
+
+interface VkeyResponse {
+  req_0?: {
+    data?: {
+      midurlinfo?: Array<{
+        purl: string
+      }>
+    }
+  }
+}
+
+interface LyricResponse {
+  lyric?: string
+}
+
+interface PlaylistResponse {
+  data?: {
+    disslist?: Array<{
+      diss_name: string
+      song_cnt: number
+    }>
+  }
+}
+
+// ---------- QQMusicService ----------
 
 class QQMusicService extends Service {
   private config: QQMusicService.Config
   private cacheDir: string
   private tempDir: string
   private guid: string
+  private logger: Logger
+
+  private static readonly MAX_CONCURRENT = 3
+  private currentDownloads = 0
+  private downloadQueue: Array<() => void> = []
 
   constructor(ctx: Context, config: QQMusicService.Config) {
     super(ctx, 'qqMusic', true)
     this.config = config
+    this.logger = ctx.logger('qq-music')
     this.guid = this.generateGuid()
     this.cacheDir = path.join(ctx.baseDir, 'data', 'music-qq', 'cache')
     this.tempDir = path.join(ctx.baseDir, 'data', 'music-qq', 'temp')
-    
-    ;[this.cacheDir, this.tempDir].forEach(dir => {
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true })
-      }
-    })
+
+    Promise.all([
+      fs.mkdir(this.cacheDir, { recursive: true }),
+      fs.mkdir(this.tempDir, { recursive: true })
+    ]).catch(err => this.logger.error('创建目录失败:', err))
   }
 
   static inject = ['http']
@@ -221,27 +299,31 @@ class QQMusicService extends Service {
     try {
       const now = Date.now()
       const expireTime = this.config.cacheExpire * 3600000
-      
+
       const dirs = [this.cacheDir, this.tempDir]
       for (const dir of dirs) {
-        const files = fs.readdirSync(dir)
+        const files = await fs.readdir(dir).catch(() => [] as string[])
         for (const file of files) {
           const filePath = path.join(dir, file)
-          const stats = fs.statSync(filePath)
-          if (now - stats.mtime.getTime() > expireTime) {
-            fs.unlinkSync(filePath)
-            this.ctx.logger.info('清理文件:', file)
+          try {
+            const stats = await fs.stat(filePath)
+            if (now - stats.mtimeMs > expireTime) {
+              await fs.unlink(filePath)
+              this.logger.info('清理过期缓存文件:', file)
+            }
+          } catch {
+            // 忽略单个文件错误
           }
         }
       }
     } catch (error) {
-      this.ctx.logger.error('清理缓存失败:', error)
+      this.logger.error('清理缓存失败:', error)
     }
   }
 
   async search(keyword: string, limit: number = 5): Promise<QQMusicService.SongInfo[]> {
     const url = 'https://c.y.qq.com/soso/fcgi-bin/client_search_cp'
-    
+
     const params = {
       ct: 24,
       qqmusic_ver: 1298,
@@ -286,10 +368,10 @@ class QQMusicService extends Service {
         return []
       }
 
-      return result.data.song.list.map((song: any) => ({
+      return result.data.song.list.map((song: RawSong) => ({
         mid: song.mid,
         name: song.name,
-        singer: song.singer.map((s: any) => s.name).join('/'),
+        singer: song.singer.map(s => s.name).join('/'),
         album: song.album?.name || '未知专辑',
         duration: song.interval,
         songId: song.id,
@@ -302,51 +384,51 @@ class QQMusicService extends Service {
     }
   }
 
-  async getPlayUrl(songMid: string, quality: number = 128): Promise<{url: string | null, type: string, quality: number}> {
+  async getPlayUrl(songMid: string, quality?: number): Promise<{ url: string | null; type: 'success' | 'vip' | 'error'; quality: number }> {
     try {
       const guid = this.guid
       const uin = this.extractUin()
-      
+
       const vkeyUrl = 'https://u.y.qq.com/cgi-bin/musicu.fcg'
       const vkeyData = {
         req: {
           module: 'CDN.SrfCdnDispatchServer',
           method: 'GetCdnDispatch',
-          param: { guid: guid, calltype: 0, userip: '' }
+          param: { guid, calltype: 0, userip: '' }
         },
         req_0: {
           module: 'vkey.GetVkeyServer',
           method: 'CgiGetVkey',
           param: {
-            guid: guid,
+            guid,
             songmid: [songMid],
             songtype: [0],
-            uin: uin,
+            uin,
             loginflag: 1,
             platform: '20'
           }
         },
-        comm: { uin: uin, format: 'json', ct: 24, cv: 0 }
+        comm: { uin, format: 'json', ct: 24, cv: 0 }
       }
 
-      const { data: vkeyRes } = await this.ctx.http.post(vkeyUrl, vkeyData, {
+      const { data } = await this.ctx.http.post(vkeyUrl, vkeyData, {
         headers: {
           'Content-Type': 'application/json',
           'Cookie': this.config.cookie,
           'Referer': 'https://y.qq.com',
           'User-Agent': this.config.userAgent
         }
-      })
+      }) as { data: VkeyResponse }
 
-      const midUrlInfo = vkeyRes.req_0?.data?.midurlinfo?.[0]
+      const midUrlInfo = data.req_0?.data?.midurlinfo?.[0]
       if (!midUrlInfo || !midUrlInfo.purl) {
-        return { url: null, type: 'need_vip', quality: 0 }
+        return { url: null, type: 'vip', quality: 0 }
       }
 
       const url = `https://isure.stream.qqmusic.qq.com/${midUrlInfo.purl}`
-      const actualQuality = midUrlInfo.purl.includes('M800') ? 320 : 
+      const actualQuality = midUrlInfo.purl.includes('M800') ? 320 :
                            midUrlInfo.purl.includes('F000') ? 999 : 128
-      
+
       return { url, type: 'success', quality: actualQuality }
     } catch (error) {
       this.logger.error('获取播放链接失败:', error)
@@ -354,32 +436,48 @@ class QQMusicService extends Service {
     }
   }
 
-  async downloadSong(songMid: string, songName: string, quality: number): Promise<string | null> {
+  async downloadSong(songMid: string, songName: string, quality?: number): Promise<string | null> {
+    // 并发控制
+    if (this.currentDownloads >= QQMusicService.MAX_CONCURRENT) {
+      await new Promise<void>(resolve => this.downloadQueue.push(resolve))
+    }
+    this.currentDownloads++
+
     try {
       await this.cleanCache()
-      
-      const { url } = await this.getPlayUrl(songMid, quality)
-      if (!url) return null
+
+      const { url, type } = await this.getPlayUrl(songMid, quality)
+      if (!url) {
+        this.logger.debug(type === 'vip' ? `VIP 歌曲无法下载: ${songName}` : `获取播放链接失败: ${songName}`)
+        return null
+      }
 
       const fileName = `${songMid}_${Date.now()}.mp3`
       const filePath = path.join(this.cacheDir, fileName)
 
       await downloadFile(url, filePath, this.config.requestTimeout)
-      
-      const stats = fs.statSync(filePath)
+
+      const stats = await fs.stat(filePath)
       if (stats.size < 102400) {
-        fs.unlinkSync(filePath)
+        await fs.unlink(filePath)
+        this.logger.debug(`下载文件过小，已删除: ${fileName}`)
         return null
       }
 
+      this.logger.debug(`歌曲下载成功: ${songName} -> ${fileName}`)
       return filePath
     } catch (error) {
       this.logger.error('下载歌曲失败:', error)
       return null
+    } finally {
+      this.currentDownloads--
+      // 触发队列中的下一个
+      const next = this.downloadQueue.shift()
+      next?.()
     }
   }
 
-  async getLyrics(songMid: string): Promise<string | null> {
+  async getLyrics(songMid: string, showTimestamp: boolean = false): Promise<string | null> {
     try {
       const url = 'https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg'
       const params = {
@@ -404,10 +502,15 @@ class QQMusicService extends Service {
         }
       })
 
-      const result = JSON.parse(data.replace(/MusicJsonCallback\(|\)$/g, ''))
+      const jsonStr = data.replace(/MusicJsonCallback\(|\)$/g, '')
+      const result = JSON.parse(jsonStr) as LyricResponse
+
       if (result.lyric) {
-        const lyrics = Buffer.from(result.lyric, 'base64').toString('utf-8')
-        return lyrics.replace(/\[\d{2}:\d{2}\.\d{2,3}\]/g, '').trim()
+        let lyrics = Buffer.from(result.lyric, 'base64').toString('utf-8')
+        if (!showTimestamp) {
+          lyrics = lyrics.replace(/\[\d{2}:\d{2}\.\d{2,3}\]/g, '').trim()
+        }
+        return lyrics
       }
       return null
     } catch (error) {
@@ -416,29 +519,36 @@ class QQMusicService extends Service {
     }
   }
 
-  async getUserPlaylists(): Promise<any[]> {
+  async getUserPlaylists(): Promise<Array<{ name: string; count: number }>> {
     const uin = this.extractUin()
     const url = 'https://c.y.qq.com/rsc/fcgi-bin/fcg_user_created_diss'
-    
+
     const params = {
       cv: 10000, ct: 24, format: 'json',
       inCharset: 'utf-8', outCharset: 'utf-8',
       notice: 0, platform: 'yqq.json', needNewCode: 0,
-      uin: uin, hostUin: uin, sin: 0, ein: 19, sort: 2, g_tk: 5381
+      uin, hostUin: uin, sin: 0, ein: 19, sort: 2, g_tk: 5381
     }
 
     try {
       const { data } = await this.ctx.http.get(url, {
         params,
         headers: { 'Cookie': this.config.cookie, 'Referer': 'https://y.qq.com' }
-      })
-      return data.data?.disslist || []
+      }) as { data: PlaylistResponse }
+
+      const list = data.data?.disslist || []
+      return list.map(item => ({
+        name: item.diss_name,
+        count: item.song_cnt
+      }))
     } catch (error) {
       this.logger.error('获取歌单失败:', error)
       return []
     }
   }
 }
+
+// ---------- 命名空间类型 ----------
 
 namespace QQMusicService {
   export interface Config {
@@ -447,6 +557,7 @@ namespace QQMusicService {
     defaultQuality: number
     cacheExpire: number
     userAgent: string
+    requestTimeout: number
   }
 
   export interface SongInfo {
@@ -461,9 +572,8 @@ namespace QQMusicService {
   }
 }
 
-// ==================== 消息格式配置 Schema ====================
+// ---------- 配置 Schema ----------
 
-// 歌词格式配置
 const LyricsConfig = Schema.object({
   enabled: Schema.boolean().default(true).description('发送歌词'),
   maxLength: Schema.number().default(500).min(0).max(3000).description('歌词最大长度（0为不限制）'),
@@ -472,7 +582,6 @@ const LyricsConfig = Schema.object({
   truncateText: Schema.string().default('...').description('截断提示文本'),
 })
 
-// 歌曲信息格式配置
 const SongInfoConfig = Schema.object({
   enabled: Schema.boolean().default(true).description('发送歌曲信息'),
   format: Schema.string().role('textarea').default(
@@ -482,12 +591,11 @@ const SongInfoConfig = Schema.object({
 ⏱️ 时长：{{duration}}
 {{quality}}
 {{suffix}}`
-  ).description('歌曲信息格式模板（可用变量：{{prefix}}, {{name}}, {{singer}}, {{album}}, {{duration}}, {{quality}}, {{vip}}, {{suffix}}）'),
+  ).description('歌曲信息格式模板'),
   separator: Schema.string().default('──────────').description('分隔线样式'),
   showSeparator: Schema.boolean().default(true).description('显示分隔线'),
 })
 
-// 语音消息配置
 const VoiceConfig = Schema.object({
   enabled: Schema.boolean().default(true).description('发送语音'),
   sendFirst: Schema.boolean().default(true).description('语音优先发送（先于文字）'),
@@ -500,45 +608,26 @@ const VoiceConfig = Schema.object({
   ]).default(128).description('语音音质'),
 })
 
-// 完整的消息格式配置
 const MessageFormatConfig = Schema.intersect([
+  Schema.object({ voice: VoiceConfig }).description('语音消息'),
+  Schema.object({ songInfo: SongInfoConfig }).description('歌曲信息'),
+  Schema.object({ lyrics: LyricsConfig }).description('歌词设置'),
   Schema.object({
-    voice: VoiceConfig,
-  }).description('语音消息'),
-  
-  Schema.object({
-    songInfo: SongInfoConfig,
-  }).description('歌曲信息'),
-  
-  Schema.object({
-    lyrics: LyricsConfig,
-  }).description('歌词设置'),
-  
-  Schema.object({
-    globalPrefix: Schema.string().default('').description('全局前缀（每消息前添加）'),
-    globalSuffix: Schema.string().default('').description('全局后缀（每消息后添加）'),
+    globalPrefix: Schema.string().default('').description('全局前缀'),
+    globalSuffix: Schema.string().default('').description('全局后缀'),
     combineMessages: Schema.boolean().default(true).description('合并为单条消息（语音除外）'),
     messageDelay: Schema.number().default(500).min(0).max(5000).description('消息间隔（毫秒）'),
   }).description('全局设置'),
 ])
 
-// ==================== 群聊/私聊配置 ====================
-
 const GroupConfig = Schema.intersect([
-  Schema.object({
-    enabled: Schema.boolean().default(true).description('在群聊中启用点歌功能'),
-  }).description('基础设置'),
-  
+  Schema.object({ enabled: Schema.boolean().default(true).description('在群聊中启用点歌功能') }).description('基础设置'),
   Schema.object({
     maxResults: Schema.number().default(5).min(1).max(20).description('搜索结果数量'),
     imageMode: Schema.boolean().default(true).description('图片展示搜索结果'),
     imageFallback: Schema.boolean().default(true).description('图片失败回退文字'),
   }).description('搜索设置'),
-  
-  Schema.object({
-    messageFormat: MessageFormatConfig,
-  }).description('消息格式（可完全自定义）'),
-  
+  Schema.object({ messageFormat: MessageFormatConfig }).description('消息格式'),
   Schema.object({
     cooldown: Schema.number().default(10).min(0).max(300).description('冷却时间（秒）'),
     allowAnonymous: Schema.boolean().default(false).description('允许匿名用户'),
@@ -548,20 +637,13 @@ const GroupConfig = Schema.intersect([
 ])
 
 const PrivateConfig = Schema.intersect([
-  Schema.object({
-    enabled: Schema.boolean().default(true).description('在私聊中启用点歌功能'),
-  }).description('基础设置'),
-  
+  Schema.object({ enabled: Schema.boolean().default(true).description('在私聊中启用点歌功能') }).description('基础设置'),
   Schema.object({
     maxResults: Schema.number().default(10).min(1).max(30).description('搜索结果数量'),
     imageMode: Schema.boolean().default(true).description('图片展示搜索结果'),
     imageFallback: Schema.boolean().default(true).description('图片失败回退文字'),
   }).description('搜索设置'),
-  
-  Schema.object({
-    messageFormat: MessageFormatConfig,
-  }).description('消息格式（可完全自定义）'),
-  
+  Schema.object({ messageFormat: MessageFormatConfig }).description('消息格式'),
   Schema.object({
     cooldown: Schema.number().default(0).min(0).max(300).description('冷却时间（秒）'),
     maxDaily: Schema.number().default(50).min(0).description('每日最大次数（0无限制）'),
@@ -583,14 +665,15 @@ const AdvancedConfig = Schema.object({
   userAgent: Schema.string().default('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36').description('User-Agent'),
 })
 
+// 最终配置类型
 export interface Config {
   cookie: string
   uin: string
   defaultQuality: number
-  group: typeof GroupConfig.value
-  private: typeof PrivateConfig.value
-  search: typeof SearchConfig.value
-  advanced: typeof AdvancedConfig.value
+  group: ReturnType<typeof GroupConfig.value>
+  private: ReturnType<typeof PrivateConfig.value>
+  search: ReturnType<typeof SearchConfig.value>
+  advanced: ReturnType<typeof AdvancedConfig.value>
   adminUsers: string[]
   blacklist: string[]
   whitelist: string[]
@@ -598,7 +681,7 @@ export interface Config {
 
 export const Config: Schema<Config> = Schema.intersect([
   Schema.object({
-    cookie: Schema.string().role('textarea').required().description('QQ 音乐 Cookie'),
+    cookie: Schema.string().role('textarea').required().description('QQ 音乐 Cookie（需登录态）'),
     uin: Schema.string().required().description('QQ 号码'),
     defaultQuality: Schema.union([
       Schema.const(128).description('标准 128kbps'),
@@ -611,34 +694,69 @@ export const Config: Schema<Config> = Schema.intersect([
   Schema.object({ private: PrivateConfig }).description('私聊设置'),
   Schema.object({ search: SearchConfig }).description('搜索设置'),
   Schema.object({ advanced: AdvancedConfig }).description('高级设置'),
-  
+
   Schema.object({
-    adminUsers: Schema.array(Schema.string()).default([]).description('管理员'),
-    blacklist: Schema.array(Schema.string()).default([]).description('黑名单'),
-    whitelist: Schema.array(Schema.string()).default([]).description('白名单'),
+    adminUsers: Schema.array(Schema.string()).default([]).description('管理员列表（用户ID）'),
+    blacklist: Schema.array(Schema.string()).default([]).description('黑名单用户ID'),
+    whitelist: Schema.array(Schema.string()).default([]).description('白名单用户ID（为空则不启用）'),
   }).description('权限设置'),
 ])
 
 export const name = 'koishi-plugin-voice-qqmusic'
 export const inject = ['http', 'puppeteer?']
 
+// ---------- 全局状态 ----------
 const cooldowns = new Map<string, number>()
-const dailyLimits = new Map<string, { count: number, date: string }>()
-const concurrentDownloads = new Set<string>()
+const dailyLimits = new Map<string, { count: number; date: string }>()
+const userLocks = new Set<string>()
 
+// 定期清理过期冷却数据（每24小时）
+setInterval(() => {
+  const now = Date.now()
+  const yesterday = new Date()
+  yesterday.setDate(yesterday.getDate() - 1)
+  
+  // 清理超过24小时的冷却记录
+  for (const [key, time] of cooldowns) {
+    if (now - time > 86400000) {
+      cooldowns.delete(key)
+    }
+  }
+  
+  // 清理过期的每日限制
+  const todayStr = new Date().toDateString()
+  for (const [key, record] of dailyLimits) {
+    if (record.date !== todayStr) {
+      dailyLimits.delete(key)
+    }
+  }
+}, 86400000)
+
+// ---------- 插件入口 ----------
 export function apply(ctx: Context, config: Config) {
+  // 注册服务
   ctx.plugin(QQMusicService, {
     cookie: config.cookie,
     uin: config.uin,
     defaultQuality: config.defaultQuality,
     cacheExpire: config.advanced.cacheExpire,
-    userAgent: config.advanced.userAgent
+    userAgent: config.advanced.userAgent,
+    requestTimeout: config.advanced.requestTimeout
   })
 
+  // 定时清理缓存
   const cleanInterval = setInterval(() => {
-    ctx.qqMusic.cleanCache()
+    ctx.qqMusic?.cleanCache()
   }, config.advanced.cacheCleanInterval * 3600000)
-  ctx.on('dispose', () => clearInterval(cleanInterval))
+  
+  ctx.on('dispose', () => {
+    clearInterval(cleanInterval)
+    // 清理所有临时文件
+    const tempDir = path.join(ctx.baseDir, 'data', 'music-qq', 'temp')
+    fs.rm(tempDir, { recursive: true, force: true }).catch(() => {})
+  })
+
+  // ---------- 辅助函数 ----------
 
   function isGroup(session: Session): boolean {
     return !!session.guildId
@@ -652,83 +770,80 @@ export function apply(ctx: Context, config: Config) {
     return getEnvConfig(session).messageFormat
   }
 
-  function isAdmin(userId: string): boolean {
-    return config.adminUsers.includes(userId)
+  function isAdmin(session: Session): boolean {
+    return config.adminUsers.includes(session.userId) || session.user?.authorities?.includes(4) ?? false
   }
 
   function checkCooldown(session: Session): boolean {
-    if (isAdmin(session.userId)) return true
-    
-    const isGroupChat = isGroup(session)
+    if (isAdmin(session)) return true
+
     const env = getEnvConfig(session)
-    const key = `${isGroupChat ? 'g' : 'p'}:${session.userId}`
-    
+    const key = `${isGroup(session) ? 'g' : 'p'}:${session.userId}`
     const now = Date.now()
     const last = cooldowns.get(key)
     const cd = env.cooldown * 1000
-    
+
     if (last && now - last < cd) {
       const wait = Math.ceil((cd - (now - last)) / 1000)
-      session.send(`⏳ 请等待 ${wait} 秒`)
+      session.send(`⏳ 请等待 ${wait} 秒`).catch(() => {})
       return false
     }
-    
+
     cooldowns.set(key, now)
     return true
   }
 
   function checkDailyLimit(session: Session): boolean {
-    if (isAdmin(session.userId) || isGroup(session)) return true
-    
+    if (isAdmin(session) || isGroup(session)) return true
+
     const maxDaily = config.private.maxDaily
     if (maxDaily === 0) return true
-    
+
     const key = `daily:${session.userId}`
     const today = new Date().toDateString()
     const record = dailyLimits.get(key)
-    
+
     if (!record || record.date !== today) {
       dailyLimits.set(key, { count: 1, date: today })
       return true
     }
-    
+
     if (record.count >= maxDaily) {
-      session.send(`❌ 今日已达上限(${maxDaily}次)`)
+      session.send(`❌ 今日已达上限 (${maxDaily} 次)`).catch(() => {})
       return false
     }
-    
+
     record.count++
     return true
   }
 
   function checkPermission(session: Session): boolean {
     const userId = session.userId
-    
+
     if (config.blacklist.includes(userId)) {
-      session.send('❌ 你已被列入黑名单')
+      session.send('❌ 你已被列入黑名单').catch(() => {})
       return false
     }
-    
+
     if (config.whitelist.length > 0 && !config.whitelist.includes(userId)) {
-      session.send('❌ 你不在白名单中')
+      session.send('❌ 你不在白名单中').catch(() => {})
       return false
     }
-    
+
     return true
   }
 
-  // 构建歌曲信息消息（使用自定义模板）
   function buildSongInfoMessage(song: QQMusicService.SongInfo, format: any): string {
     if (!format.enabled) return ''
-    
-    const qualityText = song.quality >= 999 ? '🔥 无损音质' : 
-                       song.quality >= 320 ? '🔥 高品质音质' : 
+
+    const qualityText = song.quality >= 999 ? '🔥 无损音质' :
+                       song.quality >= 320 ? '🔥 高品质音质' :
                        song.quality >= 128 ? '🎵 标准音质' : ''
-    
+
     const vipText = song.payInfo?.pay_play ? '💎 VIP 专享' : ''
-    
+
     const vars = {
-      prefix: '', // 在全局处理
+      prefix: '',
       name: song.name,
       singer: song.singer,
       album: song.album,
@@ -737,44 +852,38 @@ export function apply(ctx: Context, config: Config) {
       vip: vipText,
       suffix: '',
     }
-    
+
     let message = formatTemplate(format.format, vars)
-    
-    // 添加分隔线
+
     if (format.showSeparator && format.separator) {
       message += '\n' + format.separator
     }
-    
+
     return message
   }
 
-  // 构建歌词消息（使用自定义模板）
   function buildLyricsMessage(lyrics: string, format: any): string {
     if (!format.enabled || !lyrics) return ''
-    
+
     let processedLyrics = lyrics
     if (format.maxLength > 0 && lyrics.length > format.maxLength) {
       processedLyrics = lyrics.substring(0, format.maxLength) + format.truncateText
     }
-    
+
     return formatTemplate(format.format, { lyrics: processedLyrics })
   }
 
-  // 发送搜索结果
   async function sendSearchResult(session: Session, songs: QQMusicService.SongInfo[], keyword: string): Promise<boolean> {
     const env = getEnvConfig(session)
-    
+
     if (env.imageMode) {
       try {
         const html = buildSongListHTML(songs, keyword)
         const imagePath = path.join(ctx.qqMusic['tempDir'], `list_${Date.now()}.png`)
         const result = await htmlToImage(html, imagePath, ctx)
-        
+
         if (result) {
           await session.send(h.image('file://' + result))
-          setTimeout(() => {
-            try { fs.unlinkSync(result) } catch {}
-          }, 60000)
           return true
         }
       } catch (e) {
@@ -782,53 +891,59 @@ export function apply(ctx: Context, config: Config) {
         if (!env.imageFallback) return false
       }
     }
-    
+
+    // 文字列表
     const list = songs.map((s, i) => {
       const icon = s.payInfo?.pay_play ? '💎' : '🎵'
       const quality = s.quality >= 320 ? '🔥' : ''
-      return `${i+1}. ${icon}${quality} ${s.name}\n   🎤 ${s.singer} | 💿 ${s.album} | ⏱️ ${formatTime(s.duration)}`
+      return `${i + 1}. ${icon}${quality} ${s.name}\n   🎤 ${s.singer} | 💿 ${s.album} | ⏱️ ${formatTime(s.duration)}`
     }).join('\n\n')
-    
+
     await session.send(`🎼 找到以下歌曲：\n${list}\n\n回复数字选择，0取消`)
     return true
   }
 
-  // 播放歌曲
-  async function playSong(session: Session, song: QQMusicService.SongInfo, quality: number): Promise<string> {
+  async function playSong(session: Session, song: QQMusicService.SongInfo, quality?: number): Promise<string | undefined> {
     const env = getEnvConfig(session)
     const format = getMessageFormat(session)
     const isGroupChat = isGroup(session)
-    
-    // 时长检查
+
+    // 时长检查（仅群聊）
     if (isGroupChat && env.maxDuration > 0 && song.duration > env.maxDuration) {
-      return `❌ 歌曲过长（限制${formatTime(env.maxDuration)}）`
+      return `❌ 歌曲过长（限制 ${formatTime(env.maxDuration)}）`
     }
 
-    // 并发控制
-    const downloadKey = `${session.userId}:${song.mid}`
-    if (concurrentDownloads.has(downloadKey)) {
+    // 用户级并发锁（防止同一用户重复点击）
+    const lockKey = `${session.userId}:${song.mid}`
+    if (userLocks.has(lockKey)) {
       return '⏳ 正在处理中，请稍候...'
     }
-    concurrentDownloads.add(downloadKey)
+    userLocks.add(lockKey)
 
     try {
       await session.send(`⏳ 正在准备：${song.name}...`)
-      
-      const actualQuality = quality || format.voice.quality || env.messageFormat.voice.quality
+
+      const actualQuality = quality || format.voice.quality || config.defaultQuality
       const filePath = await ctx.qqMusic.downloadSong(song.mid, song.name, actualQuality)
-      
+
       if (!filePath) {
-        return '❌ 歌曲下载失败，可能是 VIP 专享或版权受限'
+        const { type } = await ctx.qqMusic.getPlayUrl(song.mid)
+        if (type === 'vip' && env.vipTip) {
+          return '💎 该歌曲为 VIP 专享，请开通会员后播放'
+        }
+        return '❌ 歌曲下载失败，可能是版权受限或链接失效'
       }
 
       // 获取歌词（异步）
-      const lyricsPromise = format.lyrics.enabled ? ctx.qqMusic.getLyrics(song.mid) : Promise.resolve(null)
+      const lyricsPromise = format.lyrics.enabled
+        ? ctx.qqMusic.getLyrics(song.mid, format.lyrics.showTimestamp)
+        : Promise.resolve(null)
 
       // 1. 发送语音（如果启用且优先）
       if (format.voice.enabled && format.voice.sendFirst) {
         try {
           const atPrefix = isGroupChat && format.voice.atSender ? h.at(session.userId) + ' ' : ''
-          await session.send(atPrefix + h('record', { 
+          await session.send(atPrefix + h('record', {
             file: 'file://' + filePath,
             timeout: format.voice.timeout * 1000
           }))
@@ -837,29 +952,20 @@ export function apply(ctx: Context, config: Config) {
         }
       }
 
-      // 2. 构建并发送文字消息（整合信息）
+      // 2. 构建并发送文字消息
       const lyrics = await lyricsPromise
       const messages: string[] = []
-      
-      // 全局前缀
-      if (format.globalPrefix) {
-        messages.push(format.globalPrefix)
-      }
-      
-      // 歌曲信息
+
+      if (format.globalPrefix) messages.push(format.globalPrefix)
+
       const songInfo = buildSongInfoMessage(song, format.songInfo)
       if (songInfo) messages.push(songInfo)
-      
-      // 歌词
+
       const lyricsMsg = buildLyricsMessage(lyrics, format.lyrics)
       if (lyricsMsg) messages.push(lyricsMsg)
-      
-      // 全局后缀
-      if (format.globalSuffix) {
-        messages.push(format.globalSuffix)
-      }
-      
-      // 合并或分开发送
+
+      if (format.globalSuffix) messages.push(format.globalSuffix)
+
       if (format.combineMessages && messages.length > 0) {
         await session.send(messages.join('\n\n'))
       } else {
@@ -877,7 +983,7 @@ export function apply(ctx: Context, config: Config) {
       if (format.voice.enabled && !format.voice.sendFirst) {
         try {
           const atPrefix = isGroupChat && format.voice.atSender ? h.at(session.userId) + ' ' : ''
-          await session.send(atPrefix + h('record', { 
+          await session.send(atPrefix + h('record', {
             file: 'file://' + filePath,
             timeout: format.voice.timeout * 1000
           }))
@@ -886,47 +992,44 @@ export function apply(ctx: Context, config: Config) {
         }
       }
 
-      // 延迟清理文件
-      setTimeout(() => {
-        try { fs.unlinkSync(filePath) } catch {}
-      }, 120000)
-
       return undefined
-
     } catch (err) {
       ctx.logger.error('播放失败:', err)
       return '❌ 播放失败，请稍后重试'
     } finally {
-      concurrentDownloads.delete(downloadKey)
+      userLocks.delete(lockKey)
     }
   }
 
-  // ==================== 命令 ====================
+  // ---------- 命令定义 ----------
 
   const musicCmd = ctx.command('点歌 <keyword:text>', '搜索并播放 QQ 音乐')
-    .alias('qq点歌', 'music', '点歌')
+    .alias('qq点歌', 'music')
     .option('n', '-n <num:number>', { fallback: 1, desc: '直接选择第几首' })
     .option('q', '-q <quality:number>', { fallback: 0, desc: '指定音质(128/320/999)' })
 
-  musicCmd.middleware(async (session, next) => {
-    if (!checkPermission(session)) return
-    if (!checkCooldown(session)) return
-    if (!checkDailyLimit(session)) return
+  // 使用 before 中间件进行权限检查（Koishi 4.x 推荐方式）
+  musicCmd.before('check', (session) => {
+    if (!checkPermission(session)) return ''
+    if (!checkCooldown(session)) return ''
+    if (!checkDailyLimit(session)) return ''
     
     const env = getEnvConfig(session)
-    if (!env.enabled) return isGroup(session) ? undefined : '私聊点歌已关闭'
+    if (!env.enabled) {
+      return isGroup(session) ? '' : '私聊点歌已关闭'
+    }
     
     if (isGroup(session) && !env.allowAnonymous && session.author?.anonymous) {
       return '❌ 匿名用户无法点歌'
     }
-    return next()
+    return undefined
   })
 
   musicCmd.action(async ({ session, options }, keyword) => {
     if (!keyword) return '请输入歌曲名，如：点歌 周杰伦 晴天'
-    
+
     const env = getEnvConfig(session)
-    
+
     await session.send('🔍 搜索中...')
 
     try {
@@ -940,70 +1043,87 @@ export function apply(ctx: Context, config: Config) {
           await new Promise(r => setTimeout(r, 1000))
         }
       }
-      
+
       if (songs.length === 0) {
         return config.search.fuzzyMatch ? '❌ 未找到相关歌曲' : '❌ 未找到精确匹配'
       }
 
-      if (options.n > 1) {
-        if (options.n > songs.length) {
-          return `❌ 只有 ${songs.length} 首结果`
-        }
-        return await playSong(session, songs[options.n - 1], options.q)
+      // 直接播放指定序号
+      if (options.n && options.n > 0 && options.n <= songs.length) {
+        return await playSong(session, songs[options.n - 1], options.q) ?? ''
+      }
+      
+      if (options.n && options.n > songs.length) {
+        return `❌ 只有 ${songs.length} 首结果`
       }
 
+      // 发送列表等待选择
       const listSent = await sendSearchResult(session, songs, keyword)
       if (!listSent) return '❌ 发送失败'
 
-      const res = await session.prompt(60000)
-      if (!res || res === '0') return '已取消'
-      
-      const n = parseInt(res)
-      if (isNaN(n) || n < 1 || n > songs.length) {
-        return '❌ 无效选择'
-      }
-      
-      return await playSong(session, songs[n - 1], options.q)
+      try {
+        const res = await session.prompt(60000)
+        if (!res || res === '0') return '已取消'
 
+        const n = parseInt(res)
+        if (isNaN(n) || n < 1 || n > songs.length) {
+          return '❌ 无效选择'
+        }
+
+        const result = await playSong(session, songs[n - 1], options.q)
+        return result ?? ''
+      } catch (promptErr) {
+        // prompt 超时或失败
+        return '⏰ 选择超时，请重新点歌'
+      }
     } catch (err) {
       ctx.logger.error('点歌失败:', err)
       return '❌ 搜索失败，请检查配置'
     }
   })
 
+  // 查看歌单
   ctx.command('我的歌单', '查看 QQ 音乐歌单').action(async ({ session }) => {
     try {
       const list = await ctx.qqMusic.getUserPlaylists()
       if (list.length === 0) return '📂 没有找到歌单'
-      return '📚 我的歌单：\n' + list.map((p, i) => 
-        `${i+1}. ${p.diss_name} (${p.song_cnt}首)`
+      return '📚 我的歌单：\n' + list.map((p, i) =>
+        `${i + 1}. ${p.name} (${p.count}首)`
       ).join('\n')
     } catch (error) {
       return '❌ 获取歌单失败'
     }
   })
 
-  ctx.command('点歌状态').action(async ({ session }) => {
-    if (!isAdmin(session.userId)) return '❌ 无权使用'
-    
-    const files = fs.readdirSync(ctx.qqMusic['cacheDir'])
-    const size = files.reduce((a, f) => {
-      try { 
-        return a + fs.statSync(path.join(ctx.qqMusic['cacheDir'], f)).size 
-      } catch { return a }
-    }, 0)
-    
-    return [
-      '📊 系统状态',
-      `缓存文件: ${files.length}个`,
-      `缓存大小: ${(size/1024/1024).toFixed(1)}MB`,
-      `群聊: ${config.group.enabled ? '✅' : '❌'}`,
-      `私聊: ${config.private.enabled ? '✅' : '❌'}`,
-    ].join('\n')
+  // 点歌状态（管理员）
+  ctx.command('点歌状态', '查看点歌系统状态').action(async ({ session }) => {
+    if (!isAdmin(session)) return '❌ 无权使用'
+
+    try {
+      const files = await fs.readdir(ctx.qqMusic['cacheDir']).catch(() => [] as string[])
+      let size = 0
+      for (const file of files) {
+        try {
+          const stat = await fs.stat(path.join(ctx.qqMusic['cacheDir'], file))
+          size += stat.size
+        } catch { }
+      }
+
+      return [
+        '📊 系统状态',
+        `缓存文件: ${files.length} 个`,
+        `缓存大小: ${(size / 1024 / 1024).toFixed(1)} MB`,
+        `群聊: ${config.group.enabled ? '✅' : '❌'}`,
+        `私聊: ${config.private.enabled ? '✅' : '❌'}`,
+      ].join('\n')
+    } catch (error) {
+      return '❌ 读取状态失败'
+    }
   })
 
-  ctx.command('清理音乐缓存').action(async ({ session }) => {
-    if (!isAdmin(session.userId)) return '❌ 无权使用'
+  // 清理缓存（管理员）
+  ctx.command('清理音乐缓存', '手动清理过期缓存').action(async ({ session }) => {
+    if (!isAdmin(session)) return '❌ 无权使用'
     await ctx.qqMusic.cleanCache()
     return '✅ 缓存清理完成'
   })
