@@ -4,7 +4,7 @@
  * 支持搜索、播放、歌词显示、图片列表、自定义消息格式等
  */
 
-import { Context, Schema, Service, h, Session, Logger } from 'koishi'
+import { Context, Schema, Service, h, Session, Logger, Dict } from 'koishi'
 import axios from 'axios'
 import * as fs from 'fs/promises'
 import * as path from 'path'
@@ -40,6 +40,7 @@ async function downloadFile(url: string, filePath: string, timeout: number = 300
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
     }
   })
+  
   const writer = await fs.open(filePath, 'w')
   try {
     const writeStream = writer.createWriteStream()
@@ -73,7 +74,7 @@ function formatTime(s: number): string {
 /**
  * 生成搜索结果图片的 HTML
  */
-function buildSongListHTML(songs: QQMusicService.SongInfo[], keyword: string): string {
+function buildSongListHTML(songs: SongInfo[], keyword: string): string {
   const items = songs.map((song, idx) => `
     <div class="song-item">
       <div class="number">${idx + 1}</div>
@@ -194,6 +195,7 @@ async function htmlToImage(html: string, outputPath: string, ctx: Context): Prom
     ctx.logger.warn('puppeteer 服务未找到，无法生成图片')
     return null
   }
+  
   let page: any
   try {
     page = await ctx.puppeteer.page()
@@ -248,19 +250,33 @@ interface LyricResponse {
   lyric?: string
 }
 
+// 修正 PlaylistResponse 以匹配实际 API 返回的两层 data 结构
 interface PlaylistResponse {
   data?: {
-    disslist?: Array<{
-      diss_name: string
-      song_cnt: number
-    }>
+    data?: {
+      disslist?: Array<{
+        diss_name: string
+        song_cnt: number
+      }>
+    }
   }
+}
+
+interface SongInfo {
+  mid: string
+  name: string
+  singer: string
+  album: string
+  duration: number
+  songId: number
+  payInfo: any
+  quality: number
 }
 
 // ---------- QQMusicService ----------
 
 class QQMusicService extends Service {
-  private config: QQMusicService.Config
+  private config: QQMusicServiceConfig
   private cacheDir: string
   private tempDir: string
   private guid: string
@@ -270,7 +286,7 @@ class QQMusicService extends Service {
   private currentDownloads = 0
   private downloadQueue: Array<() => void> = []
 
-  constructor(ctx: Context, config: QQMusicService.Config) {
+  constructor(ctx: Context, config: QQMusicServiceConfig) {
     super(ctx, 'qqMusic', true)
     this.config = config
     this.logger = ctx.logger('qq-music')
@@ -278,10 +294,10 @@ class QQMusicService extends Service {
     this.cacheDir = path.join(ctx.baseDir, 'data', 'music-qq', 'cache')
     this.tempDir = path.join(ctx.baseDir, 'data', 'music-qq', 'temp')
 
-    Promise.all([
-      fs.mkdir(this.cacheDir, { recursive: true }),
-      fs.mkdir(this.tempDir, { recursive: true })
-    ]).catch(err => this.logger.error('创建目录失败:', err))
+    // 创建目录（不等待，允许异步完成）
+    this.createDirectories().catch(err => {
+      this.logger.error('创建目录失败:', err)
+    })
   }
 
   static inject = ['http']
@@ -293,6 +309,13 @@ class QQMusicService extends Service {
   private extractUin(): string {
     const match = this.config.cookie.match(/uin=o(\d+)/)
     return match ? match[1] : this.config.uin
+  }
+
+  private async createDirectories(): Promise<void> {
+    await Promise.all([
+      fs.mkdir(this.cacheDir, { recursive: true }),
+      fs.mkdir(this.tempDir, { recursive: true })
+    ])
   }
 
   async cleanCache(): Promise<void> {
@@ -321,7 +344,7 @@ class QQMusicService extends Service {
     }
   }
 
-  async search(keyword: string, limit: number = 5): Promise<QQMusicService.SongInfo[]> {
+  async search(keyword: string, limit: number = 5): Promise<SongInfo[]> {
     const url = 'https://c.y.qq.com/soso/fcgi-bin/client_search_cp'
 
     const params = {
@@ -376,12 +399,20 @@ class QQMusicService extends Service {
         duration: song.interval,
         songId: song.id,
         payInfo: song.pay || {},
-        quality: song.file?.size_320mp3 ? 320 : (song.file?.size_128mp3 ? 128 : 0)
+        quality: this.getSongQuality(song.file)
       }))
     } catch (error) {
       this.logger.error('搜索失败:', error)
       throw new Error('搜索歌曲失败')
     }
+  }
+
+  private getSongQuality(file?: RawSong['file']): number {
+    if (!file) return 0
+    if (file.size_flac) return 999
+    if (file.size_320mp3) return 320
+    if (file.size_128mp3) return 128
+    return 0
   }
 
   async getPlayUrl(songMid: string, quality?: number): Promise<{ url: string | null; type: 'success' | 'vip' | 'error'; quality: number }> {
@@ -426,14 +457,19 @@ class QQMusicService extends Service {
       }
 
       const url = `https://isure.stream.qqmusic.qq.com/${midUrlInfo.purl}`
-      const actualQuality = midUrlInfo.purl.includes('M800') ? 320 :
-                           midUrlInfo.purl.includes('F000') ? 999 : 128
+      const actualQuality = this.getUrlQuality(midUrlInfo.purl)
 
       return { url, type: 'success', quality: actualQuality }
     } catch (error) {
       this.logger.error('获取播放链接失败:', error)
       return { url: null, type: 'error', quality: 0 }
     }
+  }
+
+  private getUrlQuality(purl: string): number {
+    if (purl.includes('F000')) return 999
+    if (purl.includes('M800')) return 320
+    return 128
   }
 
   async downloadSong(songMid: string, songName: string, quality?: number): Promise<string | null> {
@@ -536,7 +572,8 @@ class QQMusicService extends Service {
         headers: { 'Cookie': this.config.cookie, 'Referer': 'https://y.qq.com' }
       }) as { data: PlaylistResponse }
 
-      const list = data.data?.disslist || []
+      // 根据修正后的 PlaylistResponse，需要访问 data.data?.disslist
+      const list = data.data?.data?.disslist || []
       return list.map(item => ({
         name: item.diss_name,
         count: item.song_cnt
@@ -550,26 +587,13 @@ class QQMusicService extends Service {
 
 // ---------- 命名空间类型 ----------
 
-namespace QQMusicService {
-  export interface Config {
-    cookie: string
-    uin: string
-    defaultQuality: number
-    cacheExpire: number
-    userAgent: string
-    requestTimeout: number
-  }
-
-  export interface SongInfo {
-    mid: string
-    name: string
-    singer: string
-    album: string
-    duration: number
-    songId: number
-    payInfo: any
-    quality: number
-  }
+interface QQMusicServiceConfig {
+  cookie: string
+  uin: string
+  defaultQuality: number
+  cacheExpire: number
+  userAgent: string
+  requestTimeout: number
 }
 
 // ---------- 配置 Schema ----------
@@ -670,10 +694,10 @@ export interface Config {
   cookie: string
   uin: string
   defaultQuality: number
-  group: ReturnType<typeof GroupConfig.value>
-  private: ReturnType<typeof PrivateConfig.value>
-  search: ReturnType<typeof SearchConfig.value>
-  advanced: ReturnType<typeof AdvancedConfig.value>
+  group: Schema<typeof GroupConfig>['value']
+  private: Schema<typeof PrivateConfig>['value']
+  search: Schema<typeof SearchConfig>['value']
+  advanced: Schema<typeof AdvancedConfig>['value']
   adminUsers: string[]
   blacklist: string[]
   whitelist: string[]
@@ -713,8 +737,7 @@ const userLocks = new Set<string>()
 // 定期清理过期冷却数据（每24小时）
 setInterval(() => {
   const now = Date.now()
-  const yesterday = new Date()
-  yesterday.setDate(yesterday.getDate() - 1)
+  const todayStr = new Date().toDateString()
   
   // 清理超过24小时的冷却记录
   for (const [key, time] of cooldowns) {
@@ -724,7 +747,6 @@ setInterval(() => {
   }
   
   // 清理过期的每日限制
-  const todayStr = new Date().toDateString()
   for (const [key, record] of dailyLimits) {
     if (record.date !== todayStr) {
       dailyLimits.delete(key)
@@ -833,7 +855,7 @@ export function apply(ctx: Context, config: Config) {
     return true
   }
 
-  function buildSongInfoMessage(song: QQMusicService.SongInfo, format: any): string {
+  function buildSongInfoMessage(song: SongInfo, format: any): string {
     if (!format.enabled) return ''
 
     const qualityText = song.quality >= 999 ? '🔥 无损音质' :
@@ -873,7 +895,7 @@ export function apply(ctx: Context, config: Config) {
     return formatTemplate(format.format, { lyrics: processedLyrics })
   }
 
-  async function sendSearchResult(session: Session, songs: QQMusicService.SongInfo[], keyword: string): Promise<boolean> {
+  async function sendSearchResult(session: Session, songs: SongInfo[], keyword: string): Promise<boolean> {
     const env = getEnvConfig(session)
 
     if (env.imageMode) {
@@ -903,7 +925,7 @@ export function apply(ctx: Context, config: Config) {
     return true
   }
 
-  async function playSong(session: Session, song: QQMusicService.SongInfo, quality?: number): Promise<string | undefined> {
+  async function playSong(session: Session, song: SongInfo, quality?: number): Promise<string | undefined> {
     const env = getEnvConfig(session)
     const format = getMessageFormat(session)
     const isGroupChat = isGroup(session)
@@ -1008,7 +1030,7 @@ export function apply(ctx: Context, config: Config) {
     .option('n', '-n <num:number>', { fallback: 1, desc: '直接选择第几首' })
     .option('q', '-q <quality:number>', { fallback: 0, desc: '指定音质(128/320/999)' })
 
-  // 使用 before 中间件进行权限检查（Koishi 4.x 推荐方式）
+  // 使用 before 中间件进行权限检查
   musicCmd.before('check', (session) => {
     if (!checkPermission(session)) return ''
     if (!checkCooldown(session)) return ''
@@ -1016,7 +1038,8 @@ export function apply(ctx: Context, config: Config) {
     
     const env = getEnvConfig(session)
     if (!env.enabled) {
-      return isGroup(session) ? '' : '私聊点歌已关闭'
+      // 根据环境返回明确提示
+      return isGroup(session) ? '❌ 群聊点歌功能已关闭' : '❌ 私聊点歌功能已关闭'
     }
     
     if (isGroup(session) && !env.allowAnonymous && session.author?.anonymous) {
@@ -1033,7 +1056,7 @@ export function apply(ctx: Context, config: Config) {
     await session.send('🔍 搜索中...')
 
     try {
-      let songs: QQMusicService.SongInfo[] = []
+      let songs: SongInfo[] = []
       for (let i = 0; i < config.search.retryTimes; i++) {
         try {
           songs = await ctx.qqMusic.search(keyword, env.maxResults)
