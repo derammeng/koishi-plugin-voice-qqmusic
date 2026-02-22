@@ -739,20 +739,24 @@ export function apply(ctx: Context, config: Config) {
     }
   }
 
-  const musicCmd = ctx.command('点歌 <keyword:text>', '搜索并播放 QQ 音乐')
-    .alias('qq点歌', 'music')
-    .option('n', '-n <num:number>', { fallback: 1, desc: '直接选择第几首' })
-    .option('q', '-q <quality:number>', { fallback: 0, desc: '指定音质(128/320/999)' })
+  const musicCmd = ctx.command('点歌 <keyword:text>', '搜索并播放 QQ 音乐，选项：-n 选择序号，-q 指定音质')
+  .alias('qq点歌', 'music')
+  .option('n', '-n <num:number>', { fallback: 1 })
+  .option('q', '-q <quality:number>', { fallback: 0 })
 
-  musicCmd.before('check', (session) => {
-    if (!checkPermission(session)) return ''
-    if (!checkCooldown(session)) return ''
-    if (!checkDailyLimit(session)) return ''
-    const env = getEnvConfig(session)
-    if (!env?.enabled) return isGroup(session) ? '❌ 群聊点歌功能已关闭' : '❌ 私聊点歌功能已关闭'
-    if (isGroup(session) && !env?.allowAnonymous && session.author?.anonymous) return '❌ 匿名用户无法点歌'
-    return undefined
-  })
+  musicCmd.before('check', (session: Session) => {
+  if (!checkPermission(session)) return '无权限'
+  if (!checkCooldown(session)) return '冷却中'
+  if (!checkDailyLimit(session)) return '已达上限'
+  const env = getEnvConfig(session)
+  if (!env?.enabled) {
+    return isGroup(session) ? '❌ 群聊点歌功能已关闭' : '❌ 私聊点歌功能已关闭'
+  }
+  if (isGroup(session) && !env?.allowAnonymous && (session.author as any)?.anonymous) {
+    return '❌ 匿名用户无法点歌'
+  }
+  return
+})
 
   musicCmd.action(async ({ session, options }: { session: Session; options: any }, keyword: string) => {
     if (!keyword) return '请输入歌曲名，如：点歌 周杰伦 晴天'
