@@ -744,18 +744,44 @@ export function apply(ctx: Context, config: Config) {
   .option('n', '-n <num:number>', { fallback: 1 })
   .option('q', '-q <quality:number>', { fallback: 0 })
 
-  musicCmd.before('check', (session: Session) => {
-  if (!checkPermission(session)) return '无权限'
-  if (!checkCooldown(session)) return '冷却中'
-  if (!checkDailyLimit(session)) return '已达上限'
+;(musicCmd as any).action(async (argv: any) => {
+  const { session, options, args } = argv
+  const keyword = args?.[0] as string
+  if (!keyword) return '请输入歌曲名，如：点歌 周杰伦 晴天'
   const env = getEnvConfig(session)
-  if (!env?.enabled) {
-    return isGroup(session) ? '❌ 群聊点歌功能已关闭' : '❌ 私聊点歌功能已关闭'
+  await session.send('🔍 搜索中...')
+  try {
+    let songs: SongInfo[] = []
+    const retryTimes = config.search?.retryTimes ?? 3
+    for (let i = 0; i < retryTimes; i++) {
+      try {
+        songs = await ctx.qqMusic.search(keyword, env?.maxResults ?? 5)
+        if (songs.length > 0) break
+      } catch (e) {
+        if (i === retryTimes - 1) throw e
+        await new Promise(r => setTimeout(r, 1000))
+      }
+    }
+    if (songs.length === 0) return config.search?.fuzzyMatch === false ? '❌ 未找到精确匹配' : '❌ 未找到相关歌曲'
+    const n = Number(options?.n ?? 0)
+    if (n > 0 && n <= songs.length) return await playSong(session, songs[n - 1], Number(options?.q)) ?? ''
+    if (n > songs.length) return `❌ 只有 ${songs.length} 首结果`
+    const listSent = await sendSearchResult(session, songs, keyword)
+    if (!listSent) return '❌ 发送失败'
+    try {
+      const res = await session.prompt(60000)
+      if (!res || res === '0') return '已取消'
+      const selectNum = parseInt(res)
+      if (isNaN(selectNum) || selectNum < 1 || selectNum > songs.length) return '❌ 无效选择'
+      const result = await playSong(session, songs[selectNum - 1], Number(options?.q))
+      return result ?? ''
+    } catch (promptErr) {
+      return '⏰ 选择超时，请重新点歌'
+    }
+  } catch (err) {
+    ctx.logger.error('点歌失败:', err)
+    return '❌ 搜索失败，请检查配置'
   }
-  if (isGroup(session) && !env?.allowAnonymous && (session.author as any)?.anonymous) {
-    return '❌ 匿名用户无法点歌'
-  }
-  return
 })
 
   musicCmd.action(async ({ session, options, args }) => {
