@@ -758,7 +758,8 @@ export function apply(ctx: Context, config: Config) {
   return
 })
 
-  musicCmd.action(async ({ session, options }: { session: Session; options: any }, keyword: string) => {
+  musicCmd.action(async (argv: any, keyword: string) => {
+  const { session, options } = argv
     if (!keyword) return '请输入歌曲名，如：点歌 周杰伦 晴天'
     const env = getEnvConfig(session)
     await session.send('🔍 搜索中...')
