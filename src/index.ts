@@ -15,7 +15,7 @@ import { Readable } from 'stream'
 declare module 'koishi' {
   interface Context {
     qqMusic: QQMusicService
-    puppeteer?: any
+    puppeteer: any
   }
 }
 
