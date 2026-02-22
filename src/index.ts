@@ -535,7 +535,10 @@ export const Config: Schema<Config> = Schema.intersect([
 ])
 
 export const name = 'koishi-plugin-voice-qqmusic'
-export const inject = ['http', 'puppeteer?']
+export const inject = {
+  required: ['http'],
+  optional: ['puppeteer'],
+}
 
 const cooldowns = new Map<string, number>()
 const dailyLimits = new Map<string, { count: number; date: string }>()
