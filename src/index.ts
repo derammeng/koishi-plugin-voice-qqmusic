@@ -209,9 +209,24 @@ class QQMusicService extends Service {
   }
 
   private extractUin(): string {
-    const match = this.serviceConfig.cookie.match(/uin=o(\d+)/)
-    return match ? match[1] : this.serviceConfig.uin
+  // 匹配标准 QQ 登录
+  const uinMatch = this.serviceConfig.cookie.match(/uin=o(\d+)/)
+  if (uinMatch) return uinMatch[1]
+  
+  // 匹配微信登录的 wxuin
+  const wxuinMatch = this.serviceConfig.cookie.match(/wxuin=(\d+)/)
+  if (wxuinMatch) return wxuinMatch[1]
+  
+  // 匹配 euin
+  const euinMatch = this.serviceConfig.cookie.match(/euin=([^;]+)/)
+  if (euinMatch) {
+    // 使用配置中填写的 uin
+    return this.serviceConfig.uin
   }
+  
+  // 配置的 uin
+  return this.serviceConfig.uin
+}
 
   private async createDirectories(): Promise<void> {
     await Promise.all([
