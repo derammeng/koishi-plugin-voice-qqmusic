@@ -209,24 +209,24 @@ class QQMusicService extends Service {
   }
 
   private extractUin(): string {
-  // 匹配标准 QQ 登录
-  const uinMatch = this.serviceConfig.cookie.match(/uin=o(\d+)/)
-  if (uinMatch) return uinMatch[1]
-  
-  // 匹配微信登录的 wxuin
-  const wxuinMatch = this.serviceConfig.cookie.match(/wxuin=(\d+)/)
-  if (wxuinMatch) return wxuinMatch[1]
-  
-  // 匹配 euin
-  const euinMatch = this.serviceConfig.cookie.match(/euin=([^;]+)/)
-  if (euinMatch) {
-    // 使用配置中填写的 uin
+    // 优先使用配置的 uin
+    if (this.serviceConfig.uin) {
+      return this.serviceConfig.uin
+    }
+    // 匹配标准 QQ 登录
+    const uinMatch = this.serviceConfig.cookie.match(/uin=o(\d+)/)
+    if (uinMatch) return uinMatch[1]
+    // 匹配微信登录的 wxuin
+    const wxuinMatch = this.serviceConfig.cookie.match(/wxuin=(\d+)/)
+    if (wxuinMatch) return wxuinMatch[1]
+    // 匹配 euin (加密)
+    const euinMatch = this.serviceConfig.cookie.match(/euin=([^;]+)/)
+    if (euinMatch) {
+      // 有 euin 但没有 uin/wxuin，返回配置的 uin（已在最前返回）
+    }
+    // 最后返回配置的 uin（兜底）
     return this.serviceConfig.uin
   }
-  
-  // 配置的 uin
-  return this.serviceConfig.uin
-}
 
   private async createDirectories(): Promise<void> {
     await Promise.all([
@@ -278,8 +278,30 @@ class QQMusicService extends Service {
           'User-Agent': this.serviceConfig.userAgent
         }
       })
-      const jsonStr = data.replace(/MusicJsonCallback\(|\)$/g, '')
-      const result = JSON.parse(jsonStr)
+
+      // 健壮性处理：检查 data
+      if (!data) {
+        this.serviceLogger.error('搜索返回空数据，可能 Cookie 失效或网络问题')
+        throw new Error('搜索返回空数据')
+      }
+
+      let jsonStr: string
+      if (typeof data === 'string') {
+        // 兼容多种 JSONP 回调函数名
+        jsonStr = data.replace(/^(?:MusicJsonCallback|callback)\(|\)$/g, '')
+      } else {
+        // 如果 axios 已自动解析为对象，直接使用
+        jsonStr = data as any
+      }
+
+      let result: any
+      try {
+        result = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr
+      } catch (e) {
+        this.serviceLogger.error('JSON 解析失败，原始数据:', typeof data === 'string' ? data.substring(0, 200) : data)
+        throw new Error('搜索返回数据格式异常')
+      }
+
       if (!result.data?.song?.list) return []
       return result.data.song.list.map((song: RawSong) => ({
         mid: song.mid, name: song.name,
@@ -382,8 +404,28 @@ class QQMusicService extends Service {
         params,
         headers: { 'Referer': 'https://y.qq.com', 'Cookie': this.serviceConfig.cookie }
       })
-      const jsonStr = data.replace(/MusicJsonCallback\(|\)$/g, '')
-      const result = JSON.parse(jsonStr) as LyricResponse
+
+      // 健壮性处理：检查 data
+      if (!data) {
+        this.serviceLogger.debug('获取歌词返回空数据')
+        return null
+      }
+
+      let jsonStr: string
+      if (typeof data === 'string') {
+        jsonStr = data.replace(/^(?:MusicJsonCallback|callback)\(|\)$/g, '')
+      } else {
+        jsonStr = data as any
+      }
+
+      let result: LyricResponse
+      try {
+        result = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr
+      } catch (e) {
+        this.serviceLogger.error('歌词 JSON 解析失败，原始数据:', typeof data === 'string' ? data.substring(0, 200) : data)
+        return null
+      }
+
       if (result.lyric) {
         let lyrics = Buffer.from(result.lyric, 'base64').toString('utf-8')
         if (!showTimestamp) lyrics = lyrics.replace(/\[\d{2}:\d{2}\.\d{2,3}\]/g, '').trim()
@@ -409,7 +451,13 @@ class QQMusicService extends Service {
         params,
         headers: { 'Cookie': this.serviceConfig.cookie, 'Referer': 'https://y.qq.com' }
       }) as { data: PlaylistResponse }
-      const list = data.data?.data?.disslist || []
+
+      // 健壮性处理：检查 data 及其嵌套结构
+      if (!data || !data.data || !data.data.data || !data.data.data.disslist) {
+        this.serviceLogger.debug('获取歌单返回空数据或结构异常')
+        return []
+      }
+      const list = data.data.data.disslist
       return list.map(item => ({ name: item.diss_name, count: item.song_cnt }))
     } catch (error) {
       this.serviceLogger.error('获取歌单失败:', error)
