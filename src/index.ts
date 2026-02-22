@@ -585,7 +585,7 @@ export function apply(ctx: Context, config: Config) {
   }
 
   function isAdmin(session: Session): boolean {
-    return config.adminUsers?.includes(session.userId) || (session.user?.authorities?.includes(4) ?? false)
+    return config.adminUsers?.includes(session.userId) || ((session.user as any)?.authorities?.includes(4) ?? false)
   }
 
   function checkCooldown(session: Session): boolean {
@@ -741,8 +741,8 @@ export function apply(ctx: Context, config: Config) {
 
   const musicCmd = ctx.command('点歌 <keyword:text>', '搜索并播放 QQ 音乐')
     .alias('qq点歌', 'music')
-    .option('n', '-n <num:number>', { fallback: 1, description: '直接选择第几首' })
-    .option('q', '-q <quality:number>', { fallback: 0, description: '指定音质(128/320/999)' })
+    .option('n', '-n <num:number>', { fallback: 1, desc: '直接选择第几首' })
+    .option('q', '-q <quality:number>', { fallback: 0, desc: '指定音质(128/320/999)' })
 
   musicCmd.before('check', (session) => {
     if (!checkPermission(session)) return ''
@@ -754,7 +754,7 @@ export function apply(ctx: Context, config: Config) {
     return undefined
   })
 
-  musicCmd.action(async ({ session, options }, keyword) => {
+  musicCmd.action(async ({ session, options }: { session: Session; options: any }, keyword: string) => {
     if (!keyword) return '请输入歌曲名，如：点歌 周杰伦 晴天'
     const env = getEnvConfig(session)
     await session.send('🔍 搜索中...')
@@ -771,8 +771,8 @@ export function apply(ctx: Context, config: Config) {
         }
       }
       if (songs.length === 0) return config.search?.fuzzyMatch === false ? '❌ 未找到精确匹配' : '❌ 未找到相关歌曲'
-      const n = options?.n ?? 0
-      if (n > 0 && n <= songs.length) return await playSong(session, songs[n - 1], options?.q) ?? ''
+      const n = Number(options?.n ?? 0)
+      if (n > 0 && n <= songs.length) return await playSong(session, songs[n - 1], Number(options?.q)) ?? ''
       if (n > songs.length) return `❌ 只有 ${songs.length} 首结果`
       const listSent = await sendSearchResult(session, songs, keyword)
       if (!listSent) return '❌ 发送失败'
@@ -781,7 +781,7 @@ export function apply(ctx: Context, config: Config) {
         if (!res || res === '0') return '已取消'
         const selectNum = parseInt(res)
         if (isNaN(selectNum) || selectNum < 1 || selectNum > songs.length) return '❌ 无效选择'
-        const result = await playSong(session, songs[selectNum - 1], options?.q)
+        const result = await playSong(session, songs[selectNum - 1], Number(options?.q))
         return result ?? ''
       } catch (promptErr) {
         return '⏰ 选择超时，请重新点歌'
