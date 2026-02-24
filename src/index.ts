@@ -10,6 +10,12 @@ import * as path from 'path'
 import { pipeline } from 'stream/promises'
 import { Readable } from 'stream'
 
+// 声明 puppeteer 模块
+declare module 'puppeteer' {
+  const content: any;
+  export default content;
+}
+
 // 声明模块扩展，使 ctx.qqMusic 可用
 declare module 'koishi' {
   interface Context {
