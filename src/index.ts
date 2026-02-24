@@ -9,8 +9,7 @@ import * as fs from 'fs/promises'
 import * as path from 'path'
 import { pipeline } from 'stream/promises'
 import { Readable } from 'stream'
-import puppeteer from 'puppeteer'
-import type { Page, Browser } from 'puppeteer'
+import type { Page, Browser } from 'puppeteer' // 仅导入类型，运行时动态加载
 
 // 声明模块扩展，使 ctx.qqMusic 可用
 declare module 'koishi' {
@@ -145,23 +144,21 @@ async function htmlToImage(html: string, outputPath: string, ctx: Context): Prom
       height: Math.floor(Math.random() * 360) + 720,
       deviceScaleFactor: 1 + Math.random() * 0.2
     })
-    // 修改浏览器特征
-    await page.evaluate(() => {
+    // 修改浏览器特征（使用字符串形式避免类型检查）
+    await page.evaluate(`
       Object.defineProperty(navigator, 'webdriver', {
         get: () => false
-      })
+      });
       Object.defineProperty(navigator, 'languages', {
         get: () => ['zh-CN', 'zh', 'en-US', 'en']
-      })
+      });
       Object.defineProperty(navigator, 'plugins', {
         get: () => [1, 2, 3, 4, 5]
-      })
-    })
+      });
+    `)
     await page.setContent(html, { waitUntil: 'networkidle0' })
     // 模拟滚动
-    await page.evaluate(() => {
-      window.scrollTo(0, Math.random() * document.body.scrollHeight)
-    })
+    await page.evaluate(`window.scrollTo(0, Math.random() * document.body.scrollHeight);`)
     await wait(Math.floor(Math.random() * 1000) + 500)
     const bodyHandle = await page.$('body')
     if (!bodyHandle) return null
@@ -321,7 +318,8 @@ class QQMusicService extends Service {
     }
   }
 
-  async search(keyword: string, limit: number = 5, cookies: string): Promise<SongInfo[]> {
+  // 调整参数顺序：cookies 必需，limit 可选
+  async search(keyword: string, cookies: string, limit: number = 5): Promise<SongInfo[]> {
     const url = 'https://c.y.qq.com/soso/fcgi-bin/client_search_cp'
     const params = {
       ct: 24, qqmusic_ver: 1298, new_json: 1, remoteplace: 'txt.yqq.center',
@@ -354,7 +352,6 @@ class QQMusicService extends Service {
         }
       })
 
-      // 健壮性处理：检查 data
       if (!data) {
         this.serviceLogger.error('搜索返回空数据，可能 Cookie 失效或网络问题')
         throw new Error('搜索返回空数据')
@@ -362,10 +359,8 @@ class QQMusicService extends Service {
 
       let jsonStr: string
       if (typeof data === 'string') {
-        // 兼容多种 JSONP 回调函数名
         jsonStr = data.replace(/^(?:MusicJsonCallback|callback)\(/, '').replace(/\);\s*$/, '')
       } else {
-        // 如果 axios 已自动解析为对象，直接使用
         jsonStr = data as any
       }
 
@@ -400,7 +395,8 @@ class QQMusicService extends Service {
     return 0
   }
 
-  async getPlayUrl(songMid: string, quality?: number, cookies: string): Promise<{ url: string | null; type: 'success' | 'vip' | 'error'; quality: number }> {
+  // 调整参数顺序：cookies 必需，quality 可选
+  async getPlayUrl(songMid: string, cookies: string, quality?: number): Promise<{ url: string | null; type: 'success' | 'vip' | 'error'; quality: number }> {
     try {
       const guid = this.guid
       const uin = this.extractUinFromCookies(cookies)
@@ -447,14 +443,14 @@ class QQMusicService extends Service {
     return 128
   }
 
-  async downloadSong(songMid: string, songName: string, quality?: number, cookies: string): Promise<string | null> {
+  async downloadSong(songMid: string, songName: string, quality: number | undefined, cookies: string): Promise<string | null> {
     if (this.currentDownloads >= QQMusicService.MAX_CONCURRENT) {
       await new Promise<void>(resolve => this.downloadQueue.push(resolve))
     }
     this.currentDownloads++
     try {
       await this.cleanCache()
-      const { url, type } = await this.getPlayUrl(songMid, quality, cookies)
+      const { url, type } = await this.getPlayUrl(songMid, cookies, quality)
       if (!url) {
         this.serviceLogger.debug(type === 'vip' ? `VIP 歌曲无法下载: ${songName}` : `获取播放链接失败: ${songName}`)
         return null
@@ -483,7 +479,7 @@ class QQMusicService extends Service {
     }
   }
 
-  async getLyrics(songMid: string, showTimestamp: boolean = false, cookies: string): Promise<string | null> {
+  async getLyrics(songMid: string, showTimestamp: boolean, cookies: string): Promise<string | null> {
     try {
       const url = 'https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg'
       const params = {
@@ -589,11 +585,14 @@ class QQMusicService extends Service {
     this.userSessions.delete(userId)
   }
 
-  // 生成登录二维码
+  // 生成登录二维码（动态导入 puppeteer）
   async generateLoginQr(loginType: 'qq' | 'wechat', ctx: Context): Promise<{ qrPath: string; browser: Browser; page: Page }> {
     if (!ctx.puppeteer) {
       throw new Error('puppeteer 服务未找到')
     }
+
+    // 动态导入 puppeteer（避免静态依赖）
+    const { default: puppeteer } = await import('puppeteer')
 
     // 启动浏览器，反爬配置
     const browser = await puppeteer.launch({
@@ -627,21 +626,21 @@ class QQMusicService extends Service {
       deviceScaleFactor: 1 + Math.random() * 0.2
     })
 
-    // 修改浏览器特征
-    await page.evaluate(() => {
+    // 修改浏览器特征（使用字符串形式避免类型检查）
+    await page.evaluate(`
       Object.defineProperty(navigator, 'webdriver', {
         get: () => false
-      })
+      });
       Object.defineProperty(navigator, 'languages', {
         get: () => ['zh-CN', 'zh', 'en-US', 'en']
-      })
+      });
       Object.defineProperty(navigator, 'plugins', {
         get: () => [1, 2, 3, 4, 5]
-      })
+      });
       Object.defineProperty(navigator, 'platform', {
         get: () => 'Win32'
-      })
-    })
+      });
+    `)
 
     // 设置请求头
     await page.setExtraHTTPHeaders({
@@ -663,9 +662,7 @@ class QQMusicService extends Service {
     await page.goto('https://y.qq.com/n/ryqq/login', { waitUntil: 'networkidle0', timeout: 30000 })
 
     // 模拟滚动
-    await page.evaluate(() => {
-      window.scrollTo(0, Math.random() * document.body.scrollHeight)
-    })
+    await page.evaluate(`window.scrollTo(0, Math.random() * document.body.scrollHeight);`)
     await wait(Math.floor(Math.random() * 1000) + 500)
 
     // 点击登录按钮
@@ -993,7 +990,7 @@ export function apply(ctx: Context, config: Config) {
       const filePath = await ctx.qqMusic.downloadSong(song.mid, song.name, actualQuality, userSession.cookies)
 
       if (!filePath) {
-        const { type } = await ctx.qqMusic.getPlayUrl(song.mid, actualQuality, userSession.cookies)
+        const { type } = await ctx.qqMusic.getPlayUrl(song.mid, userSession.cookies, actualQuality)
         if (type === 'vip' && env?.vipTip) return '💎 该歌曲为 VIP 专享，请开通会员后播放'
         return '❌ 歌曲下载失败，可能是版权受限或链接失效'
       }
@@ -1203,7 +1200,7 @@ export function apply(ctx: Context, config: Config) {
       const retryTimes = config.search?.retryTimes ?? 3
       for (let i = 0; i < retryTimes; i++) {
         try {
-          songs = await ctx.qqMusic.search(keyword, env?.maxResults ?? 5, userSession.cookies)
+          songs = await ctx.qqMusic.search(keyword, userSession.cookies, env?.maxResults ?? 5)
           if (songs.length > 0) break
         } catch (e) {
           if (i === retryTimes - 1) throw e
