@@ -10,17 +10,11 @@ import * as path from 'path'
 import { pipeline } from 'stream/promises'
 import { Readable } from 'stream'
 
-// 声明 puppeteer 模块
-declare module 'puppeteer' {
-  const content: any;
-  export default content;
-}
-
 // 声明模块扩展，使 ctx.qqMusic 可用
 declare module 'koishi' {
   interface Context {
     qqMusic: QQMusicService
-    puppeteer: any
+    puppeteer: any // 使用 any 类型避免依赖 puppeteer 类型定义
   }
 }
 
@@ -38,7 +32,7 @@ function wait(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
-// 模拟鼠标移动函数（接受 any 类型 page 以避免 puppeteer 类型依赖）
+// 模拟鼠标移动函数（page 参数为 any 类型）
 async function simulateMouseMove(page: any, fromX: number, fromY: number, toX: number, toY: number) {
   await page.mouse.move(fromX, fromY)
   const steps = 10
@@ -323,7 +317,7 @@ class QQMusicService extends Service {
     }
   }
 
-  // 调整参数顺序：cookies 必需，limit 可选
+  // 参数顺序：cookies 必需，limit 可选
   async search(keyword: string, cookies: string, limit: number = 5): Promise<SongInfo[]> {
     const url = 'https://c.y.qq.com/soso/fcgi-bin/client_search_cp'
     const params = {
@@ -400,7 +394,7 @@ class QQMusicService extends Service {
     return 0
   }
 
-  // 调整参数顺序：cookies 必需，quality 可选
+  // 参数顺序：cookies 必需，quality 可选
   async getPlayUrl(songMid: string, cookies: string, quality?: number): Promise<{ url: string | null; type: 'success' | 'vip' | 'error'; quality: number }> {
     try {
       const guid = this.guid
@@ -590,35 +584,13 @@ class QQMusicService extends Service {
     this.userSessions.delete(userId)
   }
 
-  // 生成登录二维码（动态导入 puppeteer，返回 any 类型避免依赖）
-  async generateLoginQr(loginType: 'qq' | 'wechat', ctx: Context): Promise<{ qrPath: string; browser: any; page: any }> {
+  // 生成登录二维码（直接使用 ctx.puppeteer）
+  async generateLoginQr(loginType: 'qq' | 'wechat', ctx: Context): Promise<{ qrPath: string; page: any }> {
     if (!ctx.puppeteer) {
       throw new Error('puppeteer 服务未找到')
     }
 
-    // 动态导入 puppeteer（避免静态依赖）
-    const { default: puppeteer } = await import('puppeteer')
-
-    // 启动浏览器，反爬配置
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-blink-features=AutomationControlled',
-        '--incognito',
-        '--start-maximized',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--disable-gpu',
-        '--disable-features=VizDisplayCompositor'
-      ],
-      ignoreDefaultArgs: ['--enable-automation']
-    })
-
-    const page = await browser.newPage()
+    const page = await ctx.puppeteer.page()
 
     // 随机 UA
     const randomUA = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)]
@@ -631,7 +603,7 @@ class QQMusicService extends Service {
       deviceScaleFactor: 1 + Math.random() * 0.2
     })
 
-    // 修改浏览器特征（使用字符串形式避免类型检查）
+    // 修改浏览器特征
     await page.evaluate(`
       Object.defineProperty(navigator, 'webdriver', {
         get: () => false
@@ -688,7 +660,7 @@ class QQMusicService extends Service {
     await page.waitForSelector('.qrcode-img img', { timeout: 10000 })
     const qrImg = await page.$('.qrcode-img img')
     if (!qrImg) {
-      await browser.close()
+      await page.close()
       throw new Error('未找到二维码')
     }
 
@@ -696,7 +668,7 @@ class QQMusicService extends Service {
     const qrPath = path.join(this.tempDir, `${loginType}_qr_${Date.now()}.png`)
     await qrImg.screenshot({ path: qrPath })
 
-    return { qrPath, browser, page }
+    return { qrPath, page }
   }
 }
 
@@ -1063,12 +1035,10 @@ export function apply(ctx: Context, config: Config) {
         return '❌ 未配置 puppeteer 服务，无法生成登录二维码'
       }
 
-      let browser: any
       let page: any
       try {
         // 生成登录二维码
-        const { qrPath, browser: loginBrowser, page: loginPage } = await ctx.qqMusic.generateLoginQr('qq', ctx)
-        browser = loginBrowser
+        const { qrPath, page: loginPage } = await ctx.qqMusic.generateLoginQr('qq', ctx)
         page = loginPage
 
         // 发送二维码
@@ -1089,14 +1059,14 @@ export function apply(ctx: Context, config: Config) {
           expireTime: Date.now() + 3600 * 1000 * 24 // 24 小时过期
         })
 
-        // 清理临时文件
+        // 清理临时文件并关闭页面（不关闭浏览器）
         await fs.unlink(qrPath)
-        await browser.close()
+        await page.close()
         return '✅ QQ 登录成功，现在可以使用点歌、查看我的歌单等功能了'
       } catch (error) {
         ctx.logger.error('QQ 登录失败:', error)
-        if (browser) {
-          await browser.close().catch(() => {})
+        if (page) {
+          await page.close().catch(() => {})
         }
         // 清理临时文件
         const tempDir = ctx.qqMusic['tempDir']
@@ -1123,12 +1093,10 @@ export function apply(ctx: Context, config: Config) {
         return '❌ 未配置 puppeteer 服务，无法生成登录二维码'
       }
 
-      let browser: any
       let page: any
       try {
         // 生成登录二维码
-        const { qrPath, browser: loginBrowser, page: loginPage } = await ctx.qqMusic.generateLoginQr('wechat', ctx)
-        browser = loginBrowser
+        const { qrPath, page: loginPage } = await ctx.qqMusic.generateLoginQr('wechat', ctx)
         page = loginPage
 
         // 发送二维码
@@ -1149,14 +1117,14 @@ export function apply(ctx: Context, config: Config) {
           expireTime: Date.now() + 3600 * 1000 * 24 // 24 小时过期
         })
 
-        // 清理临时文件
+        // 清理临时文件并关闭页面
         await fs.unlink(qrPath)
-        await browser.close()
+        await page.close()
         return '✅ 微信登录成功，现在可以使用点歌、查看我的歌单等功能了'
       } catch (error) {
         ctx.logger.error('微信登录失败:', error)
-        if (browser) {
-          await browser.close().catch(() => {})
+        if (page) {
+          await page.close().catch(() => {})
         }
         // 清理临时文件
         const tempDir = ctx.qqMusic['tempDir']
