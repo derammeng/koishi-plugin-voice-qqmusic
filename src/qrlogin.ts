@@ -4,7 +4,6 @@
  * 基于 Rain120/qq-music-api 核心逻辑适配
  */
 import axios from 'axios';
-import * as crypto from 'crypto';
 
 // 常量配置（来自 QQ音乐网页版）
 const APP_ID = 100497308;           // QQ音乐网页版 appid
@@ -19,11 +18,6 @@ function getQRToken(qrsig: string): string {
     e += (e << 5) + qrsig.charCodeAt(i);
   }
   return (2147483647 & e).toString();
-}
-
-// 工具函数：生成随机字符串（用于请求防缓存）
-function getRandomStr(): string {
-  return Math.random().toString(36).substring(2, 15);
 }
 
 // 工具函数：解析 Cookie 字符串为对象
@@ -198,7 +192,7 @@ export async function refreshMusicKey(refreshToken: string): Promise<{
   refreshToken: string;
   expiresIn: number;
 }> {
-  // 刷新接口 URL 需通过抓包获取，以下是占位实现
+  // 刷新接口 URL 需通过抓包获取，以下是基于常见实现的占位
   // 真实实现可参考 Rain120/qq-music-api 中的 refresh 逻辑
   try {
     const response = await axios.post('https://u.y.qq.com/cgi-bin/musicu.fcg', {
