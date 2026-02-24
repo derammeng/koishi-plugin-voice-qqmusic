@@ -644,7 +644,7 @@ class QQMusicService extends Service {
 
     // 点击登录按钮
     const selector = loginType === 'qq' ? '.login__switch-item--qq' : '.login__switch-item--wechat'
-    await page.waitForSelector(selector, { timeout: 10000 })
+    await page.waitForSelector(selector, { timeout: 30000, visible: true })
     const button = await page.$(selector)
     if (!button) throw new Error('未找到登录按钮')
 
@@ -1029,6 +1029,7 @@ export function apply(ctx: Context, config: Config) {
 
   // 登录命令
   ctx.command('QQ音乐QQ登录', 'QQ 音乐 QQ 登录，仅私聊可用，需要权限 4')
+    .userFields(['authority'])
     .action(async ({ session }) => {
       if (session.guildId) {
         return '❌ 该命令仅支持私聊使用，请在私聊中发送该命令'
@@ -1087,6 +1088,7 @@ export function apply(ctx: Context, config: Config) {
 
   // 微信登录命令
   ctx.command('QQ音乐微信登录', 'QQ 音乐微信登录，仅私聊可用，需要权限 4')
+    .userFields(['authority'])
     .action(async ({ session }) => {
       if (session.guildId) {
         return '❌ 该命令仅支持私聊使用，请在私聊中发送该命令'
@@ -1152,6 +1154,7 @@ export function apply(ctx: Context, config: Config) {
 
   // 点歌命令
   const musicCmd = ctx.command('点歌 <keyword:text>', '搜索并播放 QQ 音乐，选项：-n 选择序号，-q 指定音质')
+    .userFields(['authority'])
     .alias('qq点歌', 'music')
     .option('n', '-n <num:number>', { fallback: 1 })
     .option('q', '-q <quality:number>', { fallback: 0 })
@@ -1213,6 +1216,7 @@ export function apply(ctx: Context, config: Config) {
 
   // 我的歌单命令
   ctx.command('我的歌单', '查看 QQ 音乐歌单')
+    .userFields(['authority'])
     .action(async ({ session }) => {
       try {
         const userSession = ctx.qqMusic.getUserSession(session.userId)
@@ -1229,6 +1233,7 @@ export function apply(ctx: Context, config: Config) {
 
   // 点歌状态命令
   ctx.command('点歌状态', '查看点歌系统状态')
+    .userFields(['authority'])
     .action(async ({ session }) => {
       if (!isAdmin(session)) return '❌ 无权使用'
       try {
@@ -1254,6 +1259,7 @@ export function apply(ctx: Context, config: Config) {
 
   // 清理音乐缓存命令
   ctx.command('清理音乐缓存', '手动清理过期缓存')
+    .userFields(['authority'])
     .action(async ({ session }) => {
       if (!isAdmin(session)) return '❌ 无权使用'
       await ctx.qqMusic.cleanCache()
