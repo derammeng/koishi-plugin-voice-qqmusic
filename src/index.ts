@@ -850,8 +850,8 @@ export function apply(ctx: Context, config: Config) {
   function isAdmin(session: Session): boolean {
     // 如果在配置的管理员列表中，直接通过
     if (config.adminUsers?.includes(session.userId)) return true
-    // 检查用户权限等级是否 >= 4
-    const authority = session.user?.authority
+    // 检查用户权限等级是否 >= 4（使用类型断言绕过 TypeScript 类型检查）
+    const authority = (session.user as any)?.authority
     return typeof authority === 'number' && authority >= 4
   }
 
