@@ -9,7 +9,6 @@ import * as fs from 'fs/promises'
 import * as path from 'path'
 import { pipeline } from 'stream/promises'
 import { Readable } from 'stream'
-import type { Page, Browser } from 'puppeteer' // 仅导入类型，运行时动态加载
 
 // 声明模块扩展，使 ctx.qqMusic 可用
 declare module 'koishi' {
@@ -33,8 +32,8 @@ function wait(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
-// 模拟鼠标移动函数
-async function simulateMouseMove(page: Page, fromX: number, fromY: number, toX: number, toY: number) {
+// 模拟鼠标移动函数（接受 any 类型 page 以避免 puppeteer 类型依赖）
+async function simulateMouseMove(page: any, fromX: number, fromY: number, toX: number, toY: number) {
   await page.mouse.move(fromX, fromY)
   const steps = 10
   for (let i = 0; i < steps; i++) {
@@ -585,8 +584,8 @@ class QQMusicService extends Service {
     this.userSessions.delete(userId)
   }
 
-  // 生成登录二维码（动态导入 puppeteer）
-  async generateLoginQr(loginType: 'qq' | 'wechat', ctx: Context): Promise<{ qrPath: string; browser: Browser; page: Page }> {
+  // 生成登录二维码（动态导入 puppeteer，返回 any 类型避免依赖）
+  async generateLoginQr(loginType: 'qq' | 'wechat', ctx: Context): Promise<{ qrPath: string; browser: any; page: any }> {
     if (!ctx.puppeteer) {
       throw new Error('puppeteer 服务未找到')
     }
@@ -1058,8 +1057,8 @@ export function apply(ctx: Context, config: Config) {
         return '❌ 未配置 puppeteer 服务，无法生成登录二维码'
       }
 
-      let browser: Browser | undefined
-      let page: Page | undefined
+      let browser: any
+      let page: any
       try {
         // 生成登录二维码
         const { qrPath, browser: loginBrowser, page: loginPage } = await ctx.qqMusic.generateLoginQr('qq', ctx)
@@ -1118,8 +1117,8 @@ export function apply(ctx: Context, config: Config) {
         return '❌ 未配置 puppeteer 服务，无法生成登录二维码'
       }
 
-      let browser: Browser | undefined
-      let page: Page | undefined
+      let browser: any
+      let page: any
       try {
         // 生成登录二维码
         const { qrPath, browser: loginBrowser, page: loginPage } = await ctx.qqMusic.generateLoginQr('wechat', ctx)
