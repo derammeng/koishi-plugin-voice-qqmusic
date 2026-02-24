@@ -32,18 +32,6 @@ function wait(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
-// 模拟鼠标移动函数（page 参数为 any 类型）
-async function simulateMouseMove(page: any, fromX: number, fromY: number, toX: number, toY: number) {
-  await page.mouse.move(fromX, fromY)
-  const steps = 10
-  for (let i = 0; i < steps; i++) {
-    const x = fromX + (toX - fromX) * (i / steps) + Math.random() * 10 - 5
-    const y = fromY + (toY - fromY) * (i / steps) + Math.random() * 10 - 5
-    await page.mouse.move(x, y)
-    await wait(Math.floor(Math.random() * 100) + 50)
-  }
-}
-
 // ---------- 工具函数 ----------
 function formatTemplate(template: string, vars: Record<string, string>): string {
   return template.replace(/{{(\w+)}}/g, (match, key) => vars[key] ?? match)
@@ -584,92 +572,8 @@ class QQMusicService extends Service {
     this.userSessions.delete(userId)
   }
 
-  // 生成登录二维码（直接使用 ctx.puppeteer）
-  async generateLoginQr(loginType: 'qq' | 'wechat', ctx: Context): Promise<{ qrPath: string; page: any }> {
-    if (!ctx.puppeteer) {
-      throw new Error('puppeteer 服务未找到')
-    }
-
-    const page = await ctx.puppeteer.page()
-
-    // 随机 UA
-    const randomUA = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)]
-    await page.setUserAgent(randomUA)
-
-    // 随机视口
-    await page.setViewport({
-      width: Math.floor(Math.random() * 640) + 1280,
-      height: Math.floor(Math.random() * 360) + 720,
-      deviceScaleFactor: 1 + Math.random() * 0.2
-    })
-
-    // 修改浏览器特征
-    await page.evaluate(`
-      Object.defineProperty(navigator, 'webdriver', {
-        get: () => false
-      });
-      Object.defineProperty(navigator, 'languages', {
-        get: () => ['zh-CN', 'zh', 'en-US', 'en']
-      });
-      Object.defineProperty(navigator, 'plugins', {
-        get: () => [1, 2, 3, 4, 5]
-      });
-      Object.defineProperty(navigator, 'platform', {
-        get: () => 'Win32'
-      });
-    `)
-
-    // 设置请求头
-    await page.setExtraHTTPHeaders({
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-      'Accept-Encoding': 'gzip, deflate, br',
-      'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-      'Referer': 'https://y.qq.com/',
-      'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-      'Sec-Ch-Ua-Mobile': '?0',
-      'Sec-Ch-Ua-Platform': '"Windows"',
-      'Sec-Fetch-Dest': 'document',
-      'Sec-Fetch-Mode': 'navigate',
-      'Sec-Fetch-Site': 'none',
-      'Sec-Fetch-User': '?1',
-      'Upgrade-Insecure-Requests': '1'
-    })
-
-    // 打开登录页
-    await page.goto('https://y.qq.com/n/ryqq/login', { waitUntil: 'networkidle0', timeout: 30000 })
-
-    // 模拟滚动
-    await page.evaluate(`window.scrollTo(0, Math.random() * document.body.scrollHeight);`)
-    await wait(Math.floor(Math.random() * 1000) + 500)
-
-    // 点击登录按钮
-    const selector = loginType === 'qq' ? '.login__switch-item--qq' : '.login__switch-item--wechat'
-    await page.waitForSelector(selector, { timeout: 30000, visible: true })
-    const button = await page.$(selector)
-    if (!button) throw new Error('未找到登录按钮')
-
-    // 模拟鼠标移动到按钮
-    const box = await button.boundingBox()
-    if (box) {
-      await simulateMouseMove(page, box.x + 10, box.y + 10, box.x + box.width / 2, box.y + box.height / 2)
-    }
-    await button.click()
-    await wait(Math.floor(Math.random() * 1000) + 500)
-
-    // 等待二维码加载
-    await page.waitForSelector('.qrcode-img img', { timeout: 10000 })
-    const qrImg = await page.$('.qrcode-img img')
-    if (!qrImg) {
-      await page.close()
-      throw new Error('未找到二维码')
-    }
-
-    // 截图二维码
-    const qrPath = path.join(this.tempDir, `${loginType}_qr_${Date.now()}.png`)
-    await qrImg.screenshot({ path: qrPath })
-
-    return { qrPath, page }
-  }
+  // 注意：generateLoginQr 方法已被移除，因为不再使用 Puppeteer 生成二维码
+  // 如需保留图片生成功能，可保留 htmlToImage，但此处已无登录相关二维码生成
 }
 
 // ---------- 命名空间类型 ----------
@@ -798,7 +702,7 @@ export const Config: Schema<Config> = Schema.intersect([
 export const name = 'koishi-plugin-voice-qqmusic'
 export const inject = {
   required: ['http'],
-  optional: ['puppeteer'],
+  optional: ['puppeteer', 'qqMusic'], // 声明自身为可选服务，消除未注册警告
 }
 
 const cooldowns = new Map<string, number>()
@@ -1027,8 +931,8 @@ export function apply(ctx: Context, config: Config) {
     }
   }
 
-  // 登录命令
-  ctx.command('QQ音乐QQ登录', 'QQ 音乐 QQ 登录，仅私聊可用，需要权限 4')
+  // ---------- 手动登录命令（QQ）----------
+  ctx.command('QQ音乐QQ登录', 'QQ 音乐 QQ 登录（手动输入 Cookie）')
     .userFields(['authority'])
     .action(async ({ session }) => {
       if (session.guildId) {
@@ -1037,57 +941,50 @@ export function apply(ctx: Context, config: Config) {
       if (!isAdmin(session)) {
         return '❌ 你没有权限使用该命令，需要权限等级 4'
       }
-      if (!ctx.puppeteer) {
-        return '❌ 未配置 puppeteer 服务，无法生成登录二维码'
+
+      // 发送操作指南
+      const guide = `
+**请按照以下步骤获取 QQ 音乐登录 Cookie：**
+
+1. 在电脑浏览器中打开 [QQ音乐官网](https://y.qq.com/) 并登录您的账号。
+2. 登录成功后，按 **F12** 打开开发者工具。
+3. 切换到 **Application**（应用程序）标签。
+4. 在左侧菜单中找到 **Cookies** → **https://y.qq.com**。
+5. 右键点击任意一条 Cookie，选择 **全部复制**（或手动复制所有 Cookie 内容）。
+6. 将复制的完整 Cookie 字符串回复给机器人。
+
+**示例回复格式：**
+\`\`\`
+uin=o123456; wxuin=1152921505343907842; euin=oK6kowEAoK4z7KoPoiEz7icPoc**; ...
+\`\`\`
+
+⏰ 请在 **5 分钟** 内完成操作，超时需重新发送命令。
+      `.trim()
+      await session.send(guide)
+
+      // 等待用户回复 Cookie（5分钟超时）
+      const cookieStr = await session.prompt(300000)
+      if (!cookieStr) {
+        return '⏰ 操作超时，请重新发送命令'
       }
 
-      let page: any
-      try {
-        // 生成登录二维码
-        const { qrPath, page: loginPage } = await ctx.qqMusic.generateLoginQr('qq', ctx)
-        page = loginPage
-
-        // 发送二维码
-        await session.send(h.image('file://' + qrPath))
-        await session.send('请扫描上方二维码进行 QQ 登录，超时时间为 60 秒')
-
-        // 等待登录成功
-        await page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 60000 })
-
-        // 获取登录后的 cookies
-        const cookies = await page.cookies()
-        const cookieStr = cookies.map(c => `${c.name}=${c.value}`).join('; ')
-
-        // 保存登录态
-        ctx.qqMusic.setUserSession(session.userId, {
-          cookies: cookieStr,
-          loginType: 'qq',
-          expireTime: Date.now() + 3600 * 1000 * 24 // 24 小时过期
-        })
-
-        // 清理临时文件并关闭页面（不关闭浏览器）
-        await fs.unlink(qrPath)
-        await page.close()
-        return '✅ QQ 登录成功，现在可以使用点歌、查看我的歌单等功能了'
-      } catch (error) {
-        ctx.logger.error('QQ 登录失败:', error)
-        if (page) {
-          await page.close().catch(() => {})
-        }
-        // 清理临时文件
-        const tempDir = ctx.qqMusic['tempDir']
-        const files = await fs.readdir(tempDir).catch(() => [])
-        for (const file of files) {
-          if (file.startsWith('qq_qr_')) {
-            await fs.unlink(path.join(tempDir, file)).catch(() => {})
-          }
-        }
-        return '❌ 登录失败，请重试，可能是超时或扫码失败'
+      // 简单验证 Cookie 格式（至少包含 = 和 ;）
+      if (!cookieStr.includes('=') || !cookieStr.includes(';')) {
+        return '❌ Cookie 格式不正确，请确保复制的是完整的 Cookie 字符串（以分号分隔的键值对）'
       }
+
+      // 保存登录态
+      ctx.qqMusic.setUserSession(session.userId, {
+        cookies: cookieStr.trim(),
+        loginType: 'qq',
+        expireTime: Date.now() + 3600 * 1000 * 24 // 24 小时过期
+      })
+
+      return '✅ 登录成功！现在可以使用点歌、查看我的歌单等功能了。'
     })
 
-  // 微信登录命令
-  ctx.command('QQ音乐微信登录', 'QQ 音乐微信登录，仅私聊可用，需要权限 4')
+  // ---------- 手动登录命令（微信）----------
+  ctx.command('QQ音乐微信登录', 'QQ 音乐微信登录（手动输入 Cookie）')
     .userFields(['authority'])
     .action(async ({ session }) => {
       if (session.guildId) {
@@ -1096,53 +993,43 @@ export function apply(ctx: Context, config: Config) {
       if (!isAdmin(session)) {
         return '❌ 你没有权限使用该命令，需要权限等级 4'
       }
-      if (!ctx.puppeteer) {
-        return '❌ 未配置 puppeteer 服务，无法生成登录二维码'
+
+      // 发送操作指南（与 QQ 登录相同，因为获取的都是 y.qq.com 的 Cookie）
+      const guide = `
+**请按照以下步骤获取 QQ 音乐登录 Cookie（微信登录后同样适用）：**
+
+1. 在电脑浏览器中打开 [QQ音乐官网](https://y.qq.com/) 并登录您的账号（可使用微信扫码）。
+2. 登录成功后，按 **F12** 打开开发者工具。
+3. 切换到 **Application**（应用程序）标签。
+4. 在左侧菜单中找到 **Cookies** → **https://y.qq.com**。
+5. 右键点击任意一条 Cookie，选择 **全部复制**（或手动复制所有 Cookie 内容）。
+6. 将复制的完整 Cookie 字符串回复给机器人。
+
+**示例回复格式：**
+\`\`\`
+uin=o123456; wxuin=1152921505343907842; euin=oK6kowEAoK4z7KoPoiEz7icPoc**; ...
+\`\`\`
+
+⏰ 请在 **5 分钟** 内完成操作，超时需重新发送命令。
+      `.trim()
+      await session.send(guide)
+
+      const cookieStr = await session.prompt(300000)
+      if (!cookieStr) {
+        return '⏰ 操作超时，请重新发送命令'
       }
 
-      let page: any
-      try {
-        // 生成登录二维码
-        const { qrPath, page: loginPage } = await ctx.qqMusic.generateLoginQr('wechat', ctx)
-        page = loginPage
-
-        // 发送二维码
-        await session.send(h.image('file://' + qrPath))
-        await session.send('请扫描上方二维码进行微信登录，超时时间为 60 秒')
-
-        // 等待登录成功
-        await page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 60000 })
-
-        // 获取登录后的 cookies
-        const cookies = await page.cookies()
-        const cookieStr = cookies.map(c => `${c.name}=${c.value}`).join('; ')
-
-        // 保存登录态
-        ctx.qqMusic.setUserSession(session.userId, {
-          cookies: cookieStr,
-          loginType: 'wechat',
-          expireTime: Date.now() + 3600 * 1000 * 24 // 24 小时过期
-        })
-
-        // 清理临时文件并关闭页面
-        await fs.unlink(qrPath)
-        await page.close()
-        return '✅ 微信登录成功，现在可以使用点歌、查看我的歌单等功能了'
-      } catch (error) {
-        ctx.logger.error('微信登录失败:', error)
-        if (page) {
-          await page.close().catch(() => {})
-        }
-        // 清理临时文件
-        const tempDir = ctx.qqMusic['tempDir']
-        const files = await fs.readdir(tempDir).catch(() => [])
-        for (const file of files) {
-          if (file.startsWith('wechat_qr_')) {
-            await fs.unlink(path.join(tempDir, file)).catch(() => {})
-          }
-        }
-        return '❌ 登录失败，请重试，可能是超时或扫码失败'
+      if (!cookieStr.includes('=') || !cookieStr.includes(';')) {
+        return '❌ Cookie 格式不正确，请确保复制的是完整的 Cookie 字符串（以分号分隔的键值对）'
       }
+
+      ctx.qqMusic.setUserSession(session.userId, {
+        cookies: cookieStr.trim(),
+        loginType: 'wechat',
+        expireTime: Date.now() + 3600 * 1000 * 24
+      })
+
+      return '✅ 登录成功！现在可以使用点歌、查看我的歌单等功能了。'
     })
 
   // 退出登录命令
@@ -1154,7 +1041,6 @@ export function apply(ctx: Context, config: Config) {
 
   // 点歌命令
   const musicCmd = ctx.command('点歌 <keyword:text>', '搜索并播放 QQ 音乐，选项：-n 选择序号，-q 指定音质')
-    .userFields(['authority'])
     .alias('qq点歌', 'music')
     .option('n', '-n <num:number>', { fallback: 1 })
     .option('q', '-q <quality:number>', { fallback: 0 })
@@ -1216,7 +1102,6 @@ export function apply(ctx: Context, config: Config) {
 
   // 我的歌单命令
   ctx.command('我的歌单', '查看 QQ 音乐歌单')
-    .userFields(['authority'])
     .action(async ({ session }) => {
       try {
         const userSession = ctx.qqMusic.getUserSession(session.userId)
