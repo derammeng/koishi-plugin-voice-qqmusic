@@ -846,8 +846,13 @@ export function apply(ctx: Context, config: Config) {
     return getEnvConfig(session)?.messageFormat
   }
 
+  // 修复权限检查函数
   function isAdmin(session: Session): boolean {
-    return config.adminUsers?.includes(session.userId) || ((session.user as any)?.authorities?.includes(4) ?? false)
+    // 如果在配置的管理员列表中，直接通过
+    if (config.adminUsers?.includes(session.userId)) return true
+    // 检查用户权限等级是否 >= 4
+    const authority = session.user?.authority
+    return typeof authority === 'number' && authority >= 4
   }
 
   function checkCooldown(session: Session): boolean {
