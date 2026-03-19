@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-voice-qqmusic",
-  "version": "2.0.0",
-  "description": "QQ音乐点歌插件，支持qq-music-api，Canvas渲染图片",
+  "version": "1.1.0",
+  "description": "QQ音乐点歌插件，内置API，支持扫码登录，Canvas渲染",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [
@@ -18,7 +18,8 @@
     "plugin",
     "qqmusic",
     "music",
-    "voice"
+    "voice",
+    "canvas"
   ],
   "peerDependencies": {
     "koishi": "^4.15.0"
@@ -30,5 +31,14 @@
   "devDependencies": {
     "@types/node": "^20.0.0",
     "typescript": "^5.0.0"
+  },
+  "koishi": {
+    "description": {
+      "zh": "QQ音乐点歌插件，内置API无需额外部署，支持扫码登录和Canvas图片渲染"
+    },
+    "service": {
+      "required": ["http"],
+      "optional": []
+    }
   }
 }
