@@ -39,10 +39,10 @@ export interface QRStatusResult {
 }
 
 export class QQMusicQRLogin {
-  private logger: Logger;
+  private qrLogger: Logger;
 
   constructor(logger?: Logger) {
-    this.logger = logger || console as any;
+    this.qrLogger = logger || console as unknown as Logger;
   }
 
   // 获取二维码
@@ -81,7 +81,7 @@ export class QQMusicQRLogin {
 
       return { qrsig, qrBase64 };
     } catch (error: any) {
-      this.logger.error('获取二维码失败:', error.message);
+      this.qrLogger.error('获取二维码失败:', error.message);
       throw error;
     }
   }
@@ -108,7 +108,7 @@ export class QQMusicQRLogin {
         daid: DAID,
       };
 
-      const { data, headers } = await axios.get('https://ssl.ptlogin2.qq.com/ptqrlogin', {
+      const { data } = await axios.get('https://ssl.ptlogin2.qq.com/ptqrlogin', {
         params,
         headers: {
           Cookie: `qrsig=${qrsig}`,
@@ -130,7 +130,6 @@ export class QQMusicQRLogin {
 
       switch (code) {
         case '0': // 登录成功
-          // 需要跟随重定向获取最终 cookies
           const redirectUrl = args[2];
           const cookies = await this.getCookiesFromRedirect(redirectUrl);
           return { 
@@ -149,7 +148,7 @@ export class QQMusicQRLogin {
           return { status: 'error', msg: msg || '未知错误' };
       }
     } catch (error: any) {
-      this.logger.error('检查二维码状态失败:', error.message);
+      this.qrLogger.error('检查二维码状态失败:', error.message);
       return { status: 'error', msg: error.message };
     }
   }
@@ -168,7 +167,6 @@ export class QQMusicQRLogin {
       // 收集所有 cookies
       const cookies: string[] = [];
       
-      // 从最终响应中获取
       if (response.headers['set-cookie']) {
         cookies.push(...response.headers['set-cookie']);
       }
@@ -191,7 +189,7 @@ export class QQMusicQRLogin {
 
       return essentialCookies.join('; ');
     } catch (error: any) {
-      this.logger.error('获取 Cookies 失败:', error.message);
+      this.qrLogger.error('获取 Cookies 失败:', error.message);
       throw error;
     }
   }
