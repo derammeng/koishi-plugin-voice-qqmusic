@@ -1,17 +1,13 @@
 // src/qrlogin.ts
-/**
- * QQ音乐扫码登录核心模块
- * 基于 Rain120/qq-music-api 核心逻辑适配
- */
 import axios from 'axios';
+import { Logger } from 'koishi';
 
-// 常量配置（来自 QQ音乐网页版）
-const APP_ID = 100497308;           // QQ音乐网页版 appid
-const DAID = 5;                      // 设备 ID
+const APP_ID = 100497308;
+const DAID = 5;
 const REDIRECT_URI = 'https://y.qq.com/';
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
 
-// 工具函数：计算 ptqrtoken（经典算法）
+// 计算 ptqrtoken
 function getQRToken(qrsig: string): string {
   let e = 0;
   for (let i = 0; i < qrsig.length; i++) {
@@ -20,7 +16,7 @@ function getQRToken(qrsig: string): string {
   return (2147483647 & e).toString();
 }
 
-// 工具函数：解析 Cookie 字符串为对象
+// 解析 Cookie
 function parseCookie(cookieStr: string): Record<string, string> {
   const obj: Record<string, string> = {};
   cookieStr.split(';').forEach(pair => {
@@ -30,195 +26,173 @@ function parseCookie(cookieStr: string): Record<string, string> {
   return obj;
 }
 
-/**
- * 1. 获取登录二维码
- * @returns { qrsig: string; qrBase64: string } qrsig用于后续轮询，qrBase64可直接展示
- */
-export async function getQRCode(): Promise<{ qrsig: string; qrBase64: string }> {
-  const response = await axios.get('https://ssl.ptlogin2.qq.com/ptqrshow', {
-    params: {
-      appid: APP_ID,
-      e: '2',
-      l: 'M',
-      s: '3',
-      d: '72',
-      v: '4',
-      t: Math.random(),
-      daid: DAID,
-      pt_3rd_aid: APP_ID,
-    },
-    responseType: 'arraybuffer',
-    headers: {
-      'User-Agent': USER_AGENT,
-      Referer: 'https://xui.ptlogin2.qq.com/',
-    },
-  });
-
-  // 从响应头中提取 qrsig
-  const setCookie = response.headers['set-cookie'];
-  if (!setCookie || !Array.isArray(setCookie)) {
-    throw new Error('未获取到 qrsig');
-  }
-  const qrsigCookie = setCookie.find(c => c.startsWith('qrsig='));
-  if (!qrsigCookie) throw new Error('未找到 qrsig cookie');
-  
-  const qrsig = qrsigCookie.split(';')[0].split('=')[1];
-
-  // 将图片数据转为 Base64（用于发送给用户）
-  const qrBase64 = `data:image/png;base64,${Buffer.from(response.data).toString('base64')}`;
-
-  return { qrsig, qrBase64 };
+export interface QRCodeResult {
+  qrsig: string;
+  qrBase64: string;
 }
 
-/**
- * 2. 轮询二维码状态
- * @param qrsig 从 getQRCode 获取的 qrsig
- * @returns 状态对象
- *   - status: 'waiting'|'scanning'|'success'|'expired'|'other'
- *   - redirectUrl?: 登录成功时的重定向地址（含票据）
- *   - msg?: 附加信息
- */
-export async function checkQRCode(qrsig: string): Promise<{
-  status: 'waiting' | 'scanning' | 'success' | 'expired' | 'other';
-  redirectUrl?: string;
+export interface QRStatusResult {
+  status: 'waiting' | 'scanning' | 'success' | 'expired' | 'error';
+  cookies?: string;
   msg?: string;
-}> {
-  const ptqrtoken = getQRToken(qrsig);
-  const url = 'https://ssl.ptlogin2.qq.com/ptqrlogin';
-  const params = {
-    u1: REDIRECT_URI,
-    ptqrtoken,
-    ptredirect: 0,
-    h: 1,
-    t: 1,
-    g: 1,
-    from_ui: 1,
-    ptlang: 2052,
-    action: `0-0-${Date.now()}`,
-    js_ver: '22070114',
-    js_type: 1,
-    login_sig: '', // 可为空
-    pt_uistyle: 40,
-    aid: APP_ID,
-    daid: DAID,
-  };
-
-  const response = await axios.get(url, {
-    params,
-    headers: {
-      Cookie: `qrsig=${qrsig}`,
-      Referer: 'https://xui.ptlogin2.qq.com/',
-      'User-Agent': USER_AGENT,
-    },
-  });
-
-  // 返回数据格式： ptuiCB('0','0','https://y.qq.com/','0','登录成功！','用户名')
-  const match = response.data.match(/ptuiCB\((.*)\)/);
-  if (!match) throw new Error('解析返回数据失败');
-
-  const args = JSON.parse(`[${match[1]}]`);
-  const code = args[0];        // 0成功 65等待扫码 66二维码失效
-  const msg = args[4];
-  const redirectUrl = args[2];
-
-  switch (code) {
-    case '0':
-      return { status: 'success', redirectUrl, msg };
-    case '65':
-      return { status: 'scanning', msg }; // 已扫描但未确认
-    case '66':
-      return { status: 'expired', msg };
-    default:
-      return { status: 'other', msg };
-  }
+  nickname?: string;
 }
 
-/**
- * 3. 从重定向 URL 获取最终 musickey 和 refresh_token
- * @param redirectUrl 登录成功时返回的重定向地址
- * @returns 包含 musickey, refreshToken, expiresIn 的对象
- */
-export async function getMusicKeyFromRedirect(redirectUrl: string): Promise<{
-  musickey: string;
-  refreshToken: string;
-  expiresIn: number; // 单位：秒
-}> {
-  // 模拟浏览器访问重定向地址，以获取最终 Cookie
-  const response = await axios.get(redirectUrl, {
-    maxRedirects: 5, // 允许跟随重定向
-    headers: {
-      'User-Agent': USER_AGENT,
-      Referer: 'https://xui.ptlogin2.qq.com/',
-    },
-  });
+export class QQMusicQRLogin {
+  private logger: Logger;
 
-  // 合并所有重定向过程中收集的 Cookie
-  const allCookies: string[] = [];
-  if (response.config.headers?.Cookie) {
-    allCookies.push(response.config.headers.Cookie as string);
-  }
-  if (response.headers['set-cookie']) {
-    allCookies.push(...response.headers['set-cookie']);
+  constructor(logger?: Logger) {
+    this.logger = logger || console as any;
   }
 
-  const cookieStr = allCookies.join('; ');
-  const cookies = parseCookie(cookieStr);
+  // 获取二维码
+  async getQRCode(): Promise<QRCodeResult> {
+    try {
+      const response = await axios.get('https://ssl.ptlogin2.qq.com/ptqrshow', {
+        params: {
+          appid: APP_ID,
+          e: '2',
+          l: 'M',
+          s: '3',
+          d: '72',
+          v: '4',
+          t: Math.random(),
+          daid: DAID,
+          pt_3rd_aid: APP_ID,
+        },
+        responseType: 'arraybuffer',
+        headers: {
+          'User-Agent': USER_AGENT,
+          Referer: 'https://xui.ptlogin2.qq.com/',
+        },
+      });
 
-  // 提取关键字段
-  const musickey = cookies['musickey'] || cookies['qqmusic_key'];
-  const refreshToken = cookies['refresh_token'] || cookies['psrf_refresh_token'];
-  
-  // 过期时间从 Cookie 中提取（通常在 expires 字段，这里简单取 30 天）
-  const expiresIn = 30 * 24 * 3600;
-
-  if (!musickey) {
-    throw new Error('未获取到 musickey');
-  }
-
-  return {
-    musickey,
-    refreshToken: refreshToken || '',
-    expiresIn,
-  };
-}
-
-/**
- * 4. 刷新 token（使用 refresh_token 换取新的 musickey）
- * @param refreshToken 之前获取的 refresh_token
- * @returns 新的 token 信息
- */
-export async function refreshMusicKey(refreshToken: string): Promise<{
-  musickey: string;
-  refreshToken: string;
-  expiresIn: number;
-}> {
-  // 刷新接口 URL 需通过抓包获取，以下是基于常见实现的占位
-  // 真实实现可参考 Rain120/qq-music-api 中的 refresh 逻辑
-  try {
-    const response = await axios.post('https://u.y.qq.com/cgi-bin/musicu.fcg', {
-      comm: { ct: 24, cv: 0 },
-      req: {
-        module: 'QQConnectLogin.RefreshToken',
-        method: 'RefreshToken',
-        param: { refresh_token: refreshToken }
+      // 提取 qrsig
+      const setCookie = response.headers['set-cookie'];
+      if (!setCookie || !Array.isArray(setCookie)) {
+        throw new Error('未获取到 set-cookie');
       }
-    }, {
-      headers: {
-        'User-Agent': USER_AGENT,
-        Referer: 'https://y.qq.com/',
-      }
-    });
 
-    const data = response.data;
-    if (data.code === 0 && data.req?.data) {
-      return {
-        musickey: data.req.data.musickey,
-        refreshToken: data.req.data.refresh_token,
-        expiresIn: data.req.data.expires_in,
-      };
+      const qrsigCookie = setCookie.find(c => c.startsWith('qrsig='));
+      if (!qrsigCookie) throw new Error('未找到 qrsig');
+
+      const qrsig = qrsigCookie.split(';')[0].split('=')[1];
+      const qrBase64 = `data:image/png;base64,${Buffer.from(response.data).toString('base64')}`;
+
+      return { qrsig, qrBase64 };
+    } catch (error: any) {
+      this.logger.error('获取二维码失败:', error.message);
+      throw error;
     }
-    throw new Error('刷新失败');
-  } catch (error) {
-    throw new Error(`刷新 token 失败: ${error.message}`);
+  }
+
+  // 检查二维码状态
+  async checkQRCode(qrsig: string): Promise<QRStatusResult> {
+    try {
+      const ptqrtoken = getQRToken(qrsig);
+      const params = {
+        u1: REDIRECT_URI,
+        ptqrtoken,
+        ptredirect: 0,
+        h: 1,
+        t: 1,
+        g: 1,
+        from_ui: 1,
+        ptlang: 2052,
+        action: `0-0-${Date.now()}`,
+        js_ver: '22070114',
+        js_type: 1,
+        login_sig: '',
+        pt_uistyle: 40,
+        aid: APP_ID,
+        daid: DAID,
+      };
+
+      const { data, headers } = await axios.get('https://ssl.ptlogin2.qq.com/ptqrlogin', {
+        params,
+        headers: {
+          Cookie: `qrsig=${qrsig}`,
+          Referer: 'https://xui.ptlogin2.qq.com/',
+          'User-Agent': USER_AGENT,
+        },
+        maxRedirects: 0,
+        validateStatus: (status) => status === 200 || status === 302,
+      });
+
+      // 解析返回数据 ptuiCB('0','0','url','0','msg','nickname')
+      const match = data.match(/ptuiCB\((.*)\)/);
+      if (!match) throw new Error('解析响应失败');
+
+      const args = JSON.parse(`[${match[1]}]`);
+      const code = args[0];
+      const msg = args[4];
+      const nickname = args[5];
+
+      switch (code) {
+        case '0': // 登录成功
+          // 需要跟随重定向获取最终 cookies
+          const redirectUrl = args[2];
+          const cookies = await this.getCookiesFromRedirect(redirectUrl);
+          return { 
+            status: 'success', 
+            cookies, 
+            msg: '登录成功',
+            nickname 
+          };
+        case '65':
+          return { status: 'scanning', msg: '已扫描，等待确认' };
+        case '66':
+          return { status: 'waiting', msg: '等待扫码' };
+        case '67':
+          return { status: 'expired', msg: '二维码已过期' };
+        default:
+          return { status: 'error', msg: msg || '未知错误' };
+      }
+    } catch (error: any) {
+      this.logger.error('检查二维码状态失败:', error.message);
+      return { status: 'error', msg: error.message };
+    }
+  }
+
+  // 从重定向 URL 获取 Cookies
+  private async getCookiesFromRedirect(redirectUrl: string): Promise<string> {
+    try {
+      const response = await axios.get(redirectUrl, {
+        maxRedirects: 5,
+        headers: {
+          'User-Agent': USER_AGENT,
+          Referer: 'https://xui.ptlogin2.qq.com/',
+        },
+      });
+
+      // 收集所有 cookies
+      const cookies: string[] = [];
+      
+      // 从最终响应中获取
+      if (response.headers['set-cookie']) {
+        cookies.push(...response.headers['set-cookie']);
+      }
+
+      // 解析关键字段
+      const cookieObj = parseCookie(cookies.join('; '));
+      
+      // 构建标准格式的 cookie 字符串
+      const essentialCookies = [
+        `uin=o${cookieObj['uin'] || cookieObj['qq_uin'] || ''}`,
+        `skey=${cookieObj['skey'] || ''}`,
+        `p_skey=${cookieObj['p_skey'] || ''}`,
+        `p_uin=${cookieObj['p_uin'] || ''}`,
+        `pt4_token=${cookieObj['pt4_token'] || ''}`,
+        `musickey=${cookieObj['musickey'] || cookieObj['qqmusic_key'] || ''}`,
+        `psrf_qqopenid=${cookieObj['psrf_qqopenid'] || ''}`,
+        `psrf_qqaccess_token=${cookieObj['psrf_qqaccess_token'] || ''}`,
+        `psrf_qqunionid=${cookieObj['psrf_qqunionid'] || ''}`,
+      ].filter(c => !c.endsWith('=') && !c.endsWith('=undefined'));
+
+      return essentialCookies.join('; ');
+    } catch (error: any) {
+      this.logger.error('获取 Cookies 失败:', error.message);
+      throw error;
+    }
   }
 }
