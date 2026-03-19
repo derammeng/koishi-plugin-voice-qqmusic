@@ -59,10 +59,10 @@ class CanvasRenderService {
     keyword: string, 
     config: any
   ): Promise<Buffer> {
-    const width = config.width || 800;
-    const itemHeight = config.itemHeight || 100;
-    const headerHeight = config.headerHeight || 120;
-    const footerHeight = config.footerHeight || 80;
+    const width = config?.width || 800;
+    const itemHeight = config?.itemHeight || 100;
+    const headerHeight = config?.headerHeight || 120;
+    const footerHeight = config?.footerHeight || 80;
     const height = headerHeight + songs.length * itemHeight + footerHeight;
 
     const canvas = createCanvas(width, height);
@@ -72,13 +72,13 @@ class CanvasRenderService {
     await this.drawBackground(ctx, width, height, config);
 
     // 绘制标题
-    ctx.fillStyle = config.headerColor || '#ffffff';
-    ctx.font = `bold ${config.headerFontSize || 36}px "Microsoft YaHei", sans-serif`;
+    ctx.fillStyle = config?.headerColor || '#ffffff';
+    ctx.font = `bold ${config?.headerFontSize || 36}px "Microsoft YaHei", sans-serif`;
     ctx.textAlign = 'center';
     ctx.fillText('🎵 QQ音乐搜索结果', width / 2, 50);
     
-    ctx.font = `${config.subHeaderFontSize || 24}px "Microsoft YaHei", sans-serif`;
-    ctx.fillStyle = config.subHeaderColor || '#e0e0e0';
+    ctx.font = `${config?.subHeaderFontSize || 24}px "Microsoft YaHei", sans-serif`;
+    ctx.fillStyle = config?.subHeaderColor || '#e0e0e0';
     ctx.fillText(`关键词: ${keyword}`, width / 2, 90);
 
     // 绘制歌曲列表
@@ -88,8 +88,8 @@ class CanvasRenderService {
       
       // 背景条（斑马纹）
       ctx.fillStyle = i % 2 === 0 
-        ? (config.itemBgColor1 || 'rgba(255,255,255,0.1)') 
-        : (config.itemBgColor2 || 'rgba(255,255,255,0.05)');
+        ? (config?.itemBgColor1 || 'rgba(255,255,255,0.1)') 
+        : (config?.itemBgColor2 || 'rgba(255,255,255,0.05)');
       ctx.fillRect(20, y, width - 40, itemHeight - 5);
 
       // 序号（圆角背景）
@@ -97,12 +97,12 @@ class CanvasRenderService {
       const numX = 40;
       const numY = y + (itemHeight - numSize) / 2;
       
-      ctx.fillStyle = config.numberBgColor || '#667eea';
+      ctx.fillStyle = config?.numberBgColor || '#667eea';
       this.roundRect(ctx, numX, numY, numSize, numSize, 16);
       ctx.fill();
       
-      ctx.fillStyle = config.numberColor || '#ffffff';
-      ctx.font = `bold ${config.numberFontSize || 18}px "Microsoft YaHei", sans-serif`;
+      ctx.fillStyle = config?.numberColor || '#ffffff';
+      ctx.font = `bold ${config?.numberFontSize || 18}px "Microsoft YaHei", sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText((i + 1).toString(), numX + numSize/2, numY + numSize/2);
@@ -113,42 +113,42 @@ class CanvasRenderService {
       ctx.textBaseline = 'alphabetic';
       
       // VIP 标识
-      if (song.payInfo?.pay_play) {
+      if (song?.payInfo?.pay_play) {
         ctx.font = '20px "Microsoft YaHei"';
         ctx.fillText('💎', nameX, y + 35);
         nameX += 28;
       }
       
       // 高品质标识
-      if (song.quality >= 320) {
-        ctx.fillStyle = config.qualityColor || '#ff6b6b';
+      if (song?.quality >= 320) {
+        ctx.fillStyle = config?.qualityColor || '#ff6b6b';
         ctx.font = '20px "Microsoft YaHei"';
         ctx.fillText('🔥', nameX, y + 35);
         nameX += 28;
       }
 
-      ctx.fillStyle = config.songNameColor || '#ffffff';
-      ctx.font = `bold ${config.songNameSize || 22}px "Microsoft YaHei", sans-serif`;
-      const displayName = this.truncateText(ctx, song.name, width - nameX - 150);
+      ctx.fillStyle = config?.songNameColor || '#ffffff';
+      ctx.font = `bold ${config?.songNameSize || 22}px "Microsoft YaHei", sans-serif`;
+      const displayName = this.truncateText(ctx, song?.name || '', width - nameX - 150);
       ctx.fillText(displayName, nameX, y + 35);
 
       // 歌手和专辑
-      ctx.fillStyle = config.metaColor || '#cccccc';
-      ctx.font = `${config.metaSize || 18}px "Microsoft YaHei", sans-serif`;
-      const metaText = `🎤 ${song.singer}  💿 ${song.album}`;
+      ctx.fillStyle = config?.metaColor || '#cccccc';
+      ctx.font = `${config?.metaSize || 18}px "Microsoft YaHei", sans-serif`;
+      const metaText = `🎤 ${song?.singer || '未知歌手'}  💿 ${song?.album || '未知专辑'}`;
       ctx.fillText(this.truncateText(ctx, metaText, width - 100), numX + numSize + 15, y + 70);
 
       // 时长（右对齐）
       ctx.textAlign = 'right';
-      ctx.fillStyle = config.durationColor || '#aaaaaa';
-      ctx.font = `${config.durationSize || 16}px "Microsoft YaHei", sans-serif`;
-      ctx.fillText(formatTime(song.duration), width - 40, y + 55);
+      ctx.fillStyle = config?.durationColor || '#aaaaaa';
+      ctx.font = `${config?.durationSize || 16}px "Microsoft YaHei", sans-serif`;
+      ctx.fillText(formatTime(song?.duration || 0), width - 40, y + 55);
     }
 
     // 页脚提示
     ctx.textAlign = 'center';
-    ctx.fillStyle = config.footerColor || '#aaaaaa';
-    ctx.font = `${config.footerSize || 20}px "Microsoft YaHei", sans-serif`;
+    ctx.fillStyle = config?.footerColor || '#aaaaaa';
+    ctx.font = `${config?.footerSize || 20}px "Microsoft YaHei", sans-serif`;
     ctx.fillText(`回复数字 1-${songs.length} 选择歌曲，回复 0 取消`, width / 2, height - 30);
 
     return canvas.toBuffer('image/png');
@@ -160,8 +160,8 @@ class CanvasRenderService {
     template: string, 
     config: any
   ): Promise<Buffer> {
-    const width = config.width || 800;
-    const height = config.height || 600;
+    const width = config?.width || 800;
+    const height = config?.height || 600;
     
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext('2d');
@@ -169,14 +169,14 @@ class CanvasRenderService {
     // 绘制背景
     await this.drawBackground(ctx, width, height, config);
 
-    let currentY = config.padding || 40;
+    let currentY = config?.padding || 40;
 
-    // 绘制封面（如果模板包含 {img}）
-    if (template.includes('{img}')) {
+    // 绘制封面（如果模板包含 <img>）
+    if (template?.includes('<img>')) {
       try {
-        const coverResponse = await axios.get(song.cover, { responseType: 'arraybuffer' });
+        const coverResponse = await axios.get(song?.cover || '', { responseType: 'arraybuffer' });
         const coverImage = await loadImage(Buffer.from(coverResponse.data));
-        const imgSize = config.imgSize || 200;
+        const imgSize = config?.imgSize || 200;
         const imgX = (width - imgSize) / 2;
         
         // 绘制圆角封面
@@ -194,41 +194,41 @@ class CanvasRenderService {
     }
 
     // 绘制歌曲名
-    if (template.includes('{musicname}')) {
-      ctx.fillStyle = config.titleColor || '#ffffff';
-      ctx.font = `bold ${config.titleSize || 40}px "Microsoft YaHei", sans-serif`;
+    if (template?.includes('<musicname>')) {
+      ctx.fillStyle = config?.titleColor || '#ffffff';
+      ctx.font = `bold ${config?.titleSize || 40}px "Microsoft YaHei", sans-serif`;
       ctx.textAlign = 'center';
-      const name = this.truncateText(ctx, song.name, width - 80);
+      const name = this.truncateText(ctx, song?.name || '', width - 80);
       ctx.fillText(name, width / 2, currentY);
-      currentY += (config.titleSize || 40) + 20;
+      currentY += (config?.titleSize || 40) + 20;
     }
 
     // 绘制歌手
-    if (template.includes('{singer}')) {
-      ctx.fillStyle = config.artistColor || '#e0e0e0';
-      ctx.font = `${config.artistSize || 28}px "Microsoft YaHei", sans-serif`;
-      const singer = `🎤 ${song.singer}`;
+    if (template?.includes('<singer>')) {
+      ctx.fillStyle = config?.artistColor || '#e0e0e0';
+      ctx.font = `${config?.artistSize || 28}px "Microsoft YaHei", sans-serif`;
+      const singer = `🎤 ${song?.singer || '未知歌手'}`;
       ctx.fillText(singer, width / 2, currentY);
-      currentY += (config.artistSize || 28) + 15;
+      currentY += (config?.artistSize || 28) + 15;
     }
 
     // 绘制专辑
-    if (template.includes('{album}')) {
-      ctx.fillStyle = config.albumColor || '#cccccc';
-      ctx.font = `${config.albumSize || 24}px "Microsoft YaHei", sans-serif`;
-      const album = `💿 ${song.album}`;
+    if (template?.includes('<album>')) {
+      ctx.fillStyle = config?.albumColor || '#cccccc';
+      ctx.font = `${config?.albumSize || 24}px "Microsoft YaHei", sans-serif`;
+      const album = `💿 ${song?.album || '未知专辑'}`;
       ctx.fillText(album, width / 2, currentY);
-      currentY += (config.albumSize || 24) + 20;
+      currentY += (config?.albumSize || 24) + 20;
     }
 
     // 绘制时长和音质
-    ctx.font = `${config.infoSize || 22}px "Microsoft YaHei", sans-serif`;
-    ctx.fillStyle = config.infoColor || '#aaaaaa';
-    const qualityText = song.quality >= 999 ? '🔥 无损音质' : song.quality >= 320 ? '🔥 高品质' : '🎵 标准音质';
-    ctx.fillText(`⏱️ ${formatTime(song.duration)}  |  ${qualityText}`, width / 2, currentY + 20);
+    ctx.font = `${config?.infoSize || 22}px "Microsoft YaHei", sans-serif`;
+    ctx.fillStyle = config?.infoColor || '#aaaaaa';
+    const qualityText = (song?.quality || 0) >= 999 ? '🔥 无损音质' : (song?.quality || 0) >= 320 ? '🔥 高品质' : '🎵 标准音质';
+    ctx.fillText(`⏱️ ${formatTime(song?.duration || 0)}  |  ${qualityText}`, width / 2, currentY + 20);
 
     // VIP 标识
-    if (song.payInfo?.pay_play) {
+    if (song?.payInfo?.pay_play) {
       ctx.font = 'bold 26px "Microsoft YaHei"';
       ctx.fillStyle = '#ffd700';
       ctx.fillText('💎 VIP 专享', width / 2, currentY + 60);
@@ -245,9 +245,9 @@ class CanvasRenderService {
   ) {
     // 渐变背景
     const gradient = ctx.createLinearGradient(0, 0, width, height);
-    gradient.addColorStop(0, config.bgColor1 || '#1a1a2e');
-    gradient.addColorStop(0.5, config.bgColor2 || '#16213e');
-    gradient.addColorStop(1, config.bgColor3 || '#0f3460');
+    gradient.addColorStop(0, config?.bgColor1 || '#1a1a2e');
+    gradient.addColorStop(0.5, config?.bgColor2 || '#16213e');
+    gradient.addColorStop(1, config?.bgColor3 || '#0f3460');
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, width, height);
 
@@ -315,12 +315,12 @@ class QQMusicService extends Service {
     super(ctx, 'qqMusic', true);
     this.serviceConfig = config;
     this.serviceLogger = ctx.logger('qq-music');
-    this.api = new QQMusicInternalAPI(config.cookies || '', this.serviceLogger);
+    this.api = new QQMusicInternalAPI(config?.cookies || '', this.serviceLogger);
     this.qrLogin = new QQMusicQRLogin(this.serviceLogger);
-    this.maxConcurrent = config.concurrentDownloads || 3;
+    this.maxConcurrent = config?.concurrentDownloads || 3;
     
     // 设置目录
-    const baseDir = config.downloadDir 
+    const baseDir = config?.downloadDir 
       ? (path.isAbsolute(config.downloadDir) 
         ? config.downloadDir 
         : path.join(ctx.baseDir, config.downloadDir))
@@ -361,16 +361,16 @@ class QQMusicService extends Service {
   async search(keyword: string, limit: number = 5): Promise<SongInfo[]> {
     const list = await this.api.search(keyword, limit);
     return list.map((song: any) => ({
-      mid: song.songmid,
-      name: song.songname,
-      singer: song.singer.map((s: any) => s.name).join('/'),
-      album: song.albumname,
-      albumMid: song.albummid,
-      duration: song.interval,
-      songId: song.songid,
-      payInfo: song.pay,
-      quality: song.sizeflac > 0 ? 999 : song.size320 > 0 ? 320 : 128,
-      cover: `https://y.gtimg.cn/music/photo_new/T002R300x300M000${song.albummid}.jpg`,
+      mid: song?.songmid || '',
+      name: song?.songname || '未知歌曲',
+      singer: song?.singer?.map((s: any) => s?.name || '').join('/') || '未知歌手',
+      album: song?.albumname || '未知专辑',
+      albumMid: song?.albummid || '',
+      duration: song?.interval || 0,
+      songId: song?.songid || 0,
+      payInfo: song?.pay || {},
+      quality: (song?.sizeflac > 0) ? 999 : (song?.size320 > 0) ? 320 : 128,
+      cover: `https://y.gtimg.cn/music/photo_new/T002R300x300M000${song?.albummid || ''}.jpg`,
     }));
   }
 
@@ -388,7 +388,7 @@ class QQMusicService extends Service {
         return null;
       }
 
-      const safeName = sanitizeFilename(songName);
+      const safeName = sanitizeFilename(songName || 'unknown');
       const fileName = `${safeName}_${songMid}_${quality}_${Date.now()}.mp3`;
       const filePath = path.join(this.cacheDir, fileName);
 
@@ -412,7 +412,7 @@ class QQMusicService extends Service {
 
       return filePath;
     } catch (error: any) {
-      this.serviceLogger.error('下载失败:', error.message);
+      this.serviceLogger.error('下载失败:', error?.message || error);
       return null;
     } finally {
       this.currentDownloads--;
@@ -444,12 +444,13 @@ class QQMusicService extends Service {
         } catch {}
       }
     } catch (error: any) {
-      this.serviceLogger.error('清理缓存失败:', error.message);
+      this.serviceLogger.error('清理缓存失败:', error?.message || error);
     }
   }
 }
 
-// 配置 Schema
+// ============ Schema 定义 ============
+
 const ImageConfig = Schema.object({
   enabled: Schema.boolean().default(true).description('启用图片展示'),
   width: Schema.number().default(800).min(400).max(1200).description('图片宽度'),
@@ -538,10 +539,10 @@ const UsageExampleConfig = Schema.object({
     '搜索后回复数字 1-N 选择\\n' +
     '回复 0 取消选择\\n\\n' +
     '【模板变量】\\n' +
-    '{musicname} - 歌曲名称\\n' +
-    '{singer}    - 歌手名称\\n' +
-    '{album}     - 专辑名称\\n' +
-    '{img}       - 专辑封面图片\\n\\n' +
+    '<musicname> - 歌曲名称\\n' +
+    '<singer>    - 歌手名称\\n' +
+    '<album>     - 专辑名称\\n' +
+    '<img>       - 专辑封面图片\\n\\n' +
     '【文本格式变量】\\n' +
     '{n}         - 序号\\n' +
     '{name}      - 歌曲名\\n' +
@@ -552,7 +553,7 @@ const UsageExampleConfig = Schema.object({
 });
 
 // 配置类型定义
-interface ConfigType {
+export interface Config {
   cookies: string;
   port: number;
   downloadDir: string;
@@ -566,7 +567,8 @@ interface ConfigType {
   blacklist: string[];
 }
 
-export const Config: Schema<ConfigType> = Schema.intersect([
+// Schema 导出 - 使用 intersect 组合
+export const Config: Schema<Config> = Schema.intersect([
   Schema.object({
     cookies: Schema.string().role('textarea').default('').description(
       'QQ音乐Cookies（扫码登录后会自动更新，也可手动粘贴）'
@@ -592,6 +594,7 @@ export const Config: Schema<ConfigType> = Schema.intersect([
   }),
 ]);
 
+// 插件元数据
 export const name = 'koishi-plugin-voice-qqmusic';
 export const inject = ['http'];
 
@@ -602,11 +605,12 @@ const userLocks = new Set<string>();
 const searchSessions = new Map<string, SearchSession>();
 const qrLoginSessions = new Map<string, { qrsig: string; interval?: NodeJS.Timeout }>();
 
-export function apply(ctx: Context, config: ConfigType) {
+// 主应用函数
+export function apply(ctx: Context, config: Config) {
   // 初始化服务
   ctx.plugin(QQMusicService, {
-    cookies: config.cookies,
-    downloadDir: config.downloadDir,
+    cookies: config?.cookies,
+    downloadDir: config?.downloadDir,
     concurrentDownloads: 3,
   });
   
@@ -614,18 +618,18 @@ export function apply(ctx: Context, config: ConfigType) {
 
   // 自动清理缓存
   let cleanInterval: NodeJS.Timeout;
-  if (config.cache?.autoClean) {
+  if (config?.cache?.autoClean) {
     cleanInterval = setInterval(() => {
-      const maxAge = (config.cache?.maxAge || 24) * 3600 * 1000;
-      ctx.qqMusic.cleanCache(maxAge);
-    }, (config.cache?.cleanInterval || 24) * 3600 * 1000);
+      const maxAge = (config?.cache?.maxAge || 24) * 3600 * 1000;
+      ctx?.qqMusic?.cleanCache(maxAge);
+    }, (config?.cache?.cleanInterval || 24) * 3600 * 1000);
   }
 
   // 清理过期搜索会话
   const sessionCleaner = setInterval(() => {
     const now = Date.now();
     for (const [key, session] of searchSessions) {
-      if (now - session.timestamp > 600000) {
+      if (now - (session?.timestamp || 0) > 600000) {
         searchSessions.delete(key);
       }
     }
@@ -635,36 +639,41 @@ export function apply(ctx: Context, config: ConfigType) {
     clearInterval(cleanInterval);
     clearInterval(sessionCleaner);
     for (const [, session] of qrLoginSessions) {
-      if (session.interval) clearInterval(session.interval);
+      if (session?.interval) clearInterval(session.interval);
     }
   });
 
   // 辅助函数
   function isGroup(session: Session): boolean {
-    return !!session.guildId;
+    return !!(session?.guildId);
   }
 
   function getEnvConfig(session: Session) {
-    return isGroup(session) ? config.group : config.private;
+    return isGroup(session) ? config?.group : config?.private;
   }
 
   function isAdmin(session: Session): boolean {
-    if (config.adminUsers?.includes(session.userId)) return true;
-    const authority = (session.user as any)?.authority;
+    const userId = session?.userId;
+    if (!userId) return false;
+    if (config?.adminUsers?.includes(userId)) return true;
+    const authority = (session?.user as any)?.authority;
     return typeof authority === 'number' && authority >= 4;
   }
 
   function checkCooldown(session: Session): boolean {
     if (isAdmin(session)) return true;
+    const userId = session?.userId;
+    if (!userId) return false;
+    
     const env = getEnvConfig(session);
-    const key = `${isGroup(session) ? 'g' : 'p'}:${session.userId}`;
+    const key = `${isGroup(session) ? 'g' : 'p'}:${userId}`;
     const now = Date.now();
     const last = cooldowns.get(key);
     const cd = (env?.cooldown ?? 0) * 1000;
     
     if (last && now - last < cd) {
       const wait = Math.ceil((cd - (now - last)) / 1000);
-      session.send(`⏳ 请等待 ${wait} 秒后再试`).catch(() => {});
+      session?.send?.(`⏳ 请等待 ${wait} 秒后重试`)?.catch?.(() => {});
       return false;
     }
     cooldowns.set(key, now);
@@ -673,10 +682,13 @@ export function apply(ctx: Context, config: ConfigType) {
 
   function checkDailyLimit(session: Session): boolean {
     if (isAdmin(session) || isGroup(session)) return true;
-    const maxDaily = config.private?.maxDaily ?? 0;
+    const userId = session?.userId;
+    if (!userId) return false;
+    
+    const maxDaily = config?.private?.maxDaily ?? 0;
     if (maxDaily === 0) return true;
     
-    const key = `daily:${session.userId}`;
+    const key = `daily:${userId}`;
     const today = new Date().toDateString();
     const record = dailyLimits.get(key);
     
@@ -685,7 +697,7 @@ export function apply(ctx: Context, config: ConfigType) {
       return true;
     }
     if (record.count >= maxDaily) {
-      session.send(`❌ 今日已达上限 (${maxDaily} 次)`).catch(() => {});
+      session?.send?.(`⛔ 今日已达上限 (${maxDaily} 次)`)?.catch?.(() => {});
       return false;
     }
     record.count++;
@@ -693,8 +705,10 @@ export function apply(ctx: Context, config: ConfigType) {
   }
 
   function checkPermission(session: Session): boolean {
-    if (config.blacklist?.includes(session.userId)) {
-      session.send('❌ 你已被列入黑名单').catch(() => {});
+    const userId = session?.userId;
+    if (!userId) return false;
+    if (config?.blacklist?.includes(userId)) {
+      session?.send?.('⛔ 你已被列入黑名单')?.catch?.(() => {});
       return false;
     }
     return true;
@@ -703,14 +717,14 @@ export function apply(ctx: Context, config: ConfigType) {
   // 构建文本列表（用于合并转发）
   function buildTextList(songs: SongInfo[], format: string): string[] {
     return songs.map((song, i) => {
-      let text = format
+      let text = (format || '{n}. {name} ({singer})')
         .replace(/{n}/g, (i + 1).toString())
-        .replace(/{name}/g, song.name)
-        .replace(/{singer}/g, song.singer)
-        .replace(/{album}/g, song.album)
-        .replace(/{duration}/g, formatTime(song.duration));
+        .replace(/{name}/g, song?.name || '')
+        .replace(/{singer}/g, song?.singer || '')
+        .replace(/{album}/g, song?.album || '')
+        .replace(/{duration}/g, formatTime(song?.duration || 0));
       
-      const maxLen = config.group?.text?.maxLength || 30;
+      const maxLen = config?.group?.text?.maxLength || 30;
       if (text.length > maxLen + 10) {
         text = text.substring(0, maxLen + 10) + '...';
       }
@@ -721,8 +735,11 @@ export function apply(ctx: Context, config: ConfigType) {
   // 发送搜索结果
   async function sendSearchResult(session: Session, songs: SongInfo[], keyword: string): Promise<void> {
     const env = getEnvConfig(session);
-    const sessionKey = `${session.userId}:${session.guildId || 'private'}`;
+    const userId = session?.userId;
+    const guildId = session?.guildId;
+    if (!userId) return;
     
+    const sessionKey = `${userId}:${guildId || 'private'}`;
     searchSessions.set(sessionKey, { songs, keyword, timestamp: Date.now() });
 
     const messages: any[] = [];
@@ -730,25 +747,25 @@ export function apply(ctx: Context, config: ConfigType) {
     // 生成图片
     if (env?.image?.enabled) {
       try {
-        const imageBuffer = await canvasService.renderSearchList(songs, keyword, env.image);
-        const imagePath = path.join(ctx.qqMusic.getTempDir(), `search_${Date.now()}.png`);
+        const imageBuffer = await canvasService.renderSearchList(songs, keyword, env?.image);
+        const imagePath = path.join(ctx?.qqMusic?.getTempDir?.() || '', `search_${Date.now()}.png`);
         await fs.writeFile(imagePath, imageBuffer);
         messages.push(h.image('file://' + imagePath));
       } catch (e) {
-        ctx.logger.error('图片生成失败:', e);
+        ctx?.logger?.error?.('图片生成失败:', e);
       }
     }
 
     // 生成文本列表（合并转发）
     if (env?.text?.enabled) {
-      const format = env.text?.format || '{n}. {name} ({singer})';
+      const format = env?.text?.format || '{n}. {name} ({singer})';
       const textList = buildTextList(songs, format);
       
       const forwardNodes = textList.map((text) => ({
         type: 'node',
         data: {
           name: 'QQ音乐',
-          uin: session.selfId,
+          uin: session?.selfId || '',
           content: text,
         },
       }));
@@ -757,18 +774,18 @@ export function apply(ctx: Context, config: ConfigType) {
         type: 'node',
         data: {
           name: 'QQ音乐',
-          uin: session.selfId,
+          uin: session?.selfId || '',
           content: `回复数字 1-${songs.length} 选择歌曲，回复 0 取消`,
         },
       });
 
       messages.push(h('message', { forward: true }, forwardNodes.map((n: any) => 
-        h('message', { userId: session.selfId, nickname: n.data.name }, n.data.content)
+        h('message', { userId: session?.selfId || '', nickname: n?.data?.name }, n?.data?.content)
       )));
     }
 
     for (const msg of messages) {
-      await session.send(msg);
+      await session?.send?.(msg);
     }
   }
 
@@ -777,52 +794,55 @@ export function apply(ctx: Context, config: ConfigType) {
     const env = getEnvConfig(session);
     const isGroupChat = isGroup(session);
 
-    if (isGroupChat && env?.maxDuration > 0 && song.duration > env.maxDuration) {
-      return `❌ 歌曲过长（限制 ${formatTime(env.maxDuration)}）`;
+    if (isGroupChat && (env?.maxDuration || 0) > 0 && (song?.duration || 0) > env.maxDuration) {
+      return `⛔ 歌曲过长（限制 ${formatTime(env?.maxDuration || 0)}）`;
     }
 
-    const lockKey = `${session.userId}:${song.mid}`;
+    const userId = session?.userId;
+    if (!userId) return '无法获取用户ID';
+    
+    const lockKey = `${userId}:${song?.mid || ''}`;
     if (userLocks.has(lockKey)) return '⏳ 正在处理中，请稍候...';
     userLocks.add(lockKey);
 
     try {
-      await session.send(`⏳ 正在准备：${song.name}...`);
+      await session?.send?.(`⏳ 正在准备：${song?.name || '未知歌曲'}...`);
 
-      const actualQuality = quality || env?.voice?.quality || config.defaultQuality;
-      const filePath = await ctx.qqMusic.downloadSong(song.mid, song.name, actualQuality);
+      const actualQuality = quality || env?.voice?.quality || config?.defaultQuality || 128;
+      const filePath = await ctx?.qqMusic?.downloadSong?.(song?.mid || '', song?.name || '', actualQuality);
 
       if (!filePath) {
-        if (song.payInfo?.pay_play && env?.vipTip) {
+        if (song?.payInfo?.pay_play && env?.vipTip) {
           return '💎 该歌曲为VIP专享，请开通会员后播放';
         }
-        return '❌ 歌曲下载失败，可能是版权受限或需要登录';
+        return '⛔ 歌曲下载失败，可能是版权受限或需要登录';
       }
 
       // 发送语音
       if (env?.voice?.enabled) {
         try {
-          const atPrefix = isGroupChat && env.voice.atSender ? h.at(session.userId) + ' ' : '';
-          await session.send(atPrefix + h('record', { 
+          const atPrefix = isGroupChat && env?.voice?.atSender ? h.at(userId) + ' ' : '';
+          await session?.send?.(atPrefix + h('record', { 
             file: 'file://' + filePath, 
-            timeout: (env.voice.timeout || 30) * 1000 
+            timeout: (env?.voice?.timeout || 30) * 1000 
           }));
         } catch (e) {
-          ctx.logger.error('语音发送失败:', e);
+          ctx?.logger?.error?.('语音发送失败:', e);
         }
       }
 
       // 发送歌词
       if (env?.lyrics?.enabled) {
-        const lyrics = await ctx.qqMusic.getLyrics(song.mid);
+        const lyrics = await ctx?.qqMusic?.getLyrics?.(song?.mid || '');
         if (lyrics) {
           let text = lyrics;
-          const maxLen = env.lyrics.maxLength;
-          if (maxLen > 0 && text.length > maxLen) {
+          const maxLen = env?.lyrics?.maxLength;
+          if (maxLen && maxLen > 0 && text.length > maxLen) {
             text = text.substring(0, maxLen) + '...';
           }
           
-          if (env.lyrics.sendAsForward) {
-            const lines = text.split('\\n').filter((l: string) => l.trim());
+          if (env?.lyrics?.sendAsForward) {
+            const lines = text.split('\\n').filter((l: string) => l?.trim?.());
             const chunks: string[][] = [];
             for (let i = 0; i < lines.length; i += 20) {
               chunks.push(lines.slice(i, i + 20));
@@ -830,22 +850,22 @@ export function apply(ctx: Context, config: ConfigType) {
             
             const nodes = chunks.map((chunk, i) => 
               h('message', { 
-                userId: session.selfId, 
+                userId: session?.selfId || '', 
                 nickname: '歌词' 
-              }, `📜 歌词 (${i + 1}/${chunks.length}):\\n${chunk.join('\\n')}`)
+              }, `🎤 歌词 (${i + 1}/${chunks.length}):\\n${chunk.join('\\n')}`)
             );
             
-            await session.send(h('message', { forward: true }, nodes));
+            await session?.send?.(h('message', { forward: true }, nodes));
           } else {
-            await session.send(`📜 歌词：\\n${text}`);
+            await session?.send?.(`🎤 歌词：\\n${text}`);
           }
         }
       }
 
       return undefined;
     } catch (err: any) {
-      ctx.logger.error('播放失败:', err);
-      return '❌ 播放失败，请稍后重试';
+      ctx?.logger?.error?.('播放失败:', err);
+      return '⛔ 播放失败，请稍后重试';
     } finally {
       userLocks.delete(lockKey);
     }
@@ -857,45 +877,42 @@ export function apply(ctx: Context, config: ConfigType) {
       if (!session) return;
       if (!type) return '请指定登录方式：扫码 或 cookies';
 
-      const userId = session.userId;
+      const userId = session?.userId;
+      if (!userId) return '无法获取用户ID';
 
       if (type === '扫码') {
         const existing = qrLoginSessions.get(userId);
         if (existing?.interval) clearInterval(existing.interval);
 
         try {
-          const { qrsig, qrBase64 } = await ctx.qqMusic.qrLogin.getQRCode();
-          await session.send(h.image(qrBase64));
-          await session.send('请使用手机QQ扫描上方二维码，有效期5分钟...');
+          const { qrsig, qrBase64 } = await ctx?.qqMusic?.qrLogin?.getQRCode?.();
+          await session?.send?.(h.image(qrBase64 || ''));
+          await session?.send?.('请使用手机QQ扫描上方二维码，有效期5分钟...');
 
           const interval = setInterval(async () => {
             try {
-              const result = await ctx.qqMusic.qrLogin.checkQRCode(qrsig);
+              const result = await ctx?.qqMusic?.qrLogin?.checkQRCode?.(qrsig || '');
               
-              if (result.status === 'scanning') {
-                await session.send('📱 已扫描，请在手机上确认登录');
-              } else if (result.status === 'success' && result.cookies) {
+              if (result?.status === 'scanning') {
+                await session?.send?.('📱 已扫描，请在手机上确认登录');
+              } else if (result?.status === 'success' && result?.cookies) {
                 clearInterval(interval);
                 qrLoginSessions.delete(userId);
                 
-                ctx.qqMusic.updateCookies(result.cookies);
-                config.cookies = result.cookies;
+                ctx?.qqMusic?.updateCookies?.(result.cookies);
                 
-                const nickname = result.nickname || '';
-                await session.send(`✅ 登录成功！${nickname ? `欢迎，${nickname}` : ''}\\nCookies已自动保存到配置中。`);
-              } else if (result.status === 'expired') {
+                await session?.send?.(`✅ 登录成功！${result?.nickname ? `欢迎，${result.nickname}` : ''}\\nCookies已自动保存到配置中。`);
+              } else if (result?.status === 'expired') {
                 clearInterval(interval);
                 qrLoginSessions.delete(userId);
-                await session.send('⏰ 二维码已过期，请重新登录');
-              } else if (result.status === 'error') {
+                await session?.send?.('⏰ 二维码已过期，请重新登录');
+              } else if (result?.status === 'error') {
                 clearInterval(interval);
                 qrLoginSessions.delete(userId);
-                const errorMsg = result.msg || '未知错误';
-                await session.send(`❌ 登录失败：${errorMsg}`);
+                await session?.send?.(`❌ 登录失败：${result?.msg || '未知错误'}`);
               }
             } catch (e: any) {
-              const errorMessage = e?.message || '未知错误';
-              ctx.logger.error('轮询失败:', errorMessage);
+              ctx?.logger?.error?.('轮询失败:', e);
             }
           }, 2000);
 
@@ -904,32 +921,30 @@ export function apply(ctx: Context, config: ConfigType) {
             if (s?.interval === interval) {
               clearInterval(interval);
               qrLoginSessions.delete(userId);
-              session.send('⏰ 登录超时，请重新发送"登录 扫码"').catch(() => {});
+              session?.send?.('⏰ 登录超时，请重新发送"登录 扫码"')?.catch?.(() => {});
             }
           }, 5 * 60 * 1000);
 
-          qrLoginSessions.set(userId, { qrsig, interval });
+          qrLoginSessions.set(userId, { qrsig: qrsig || '', interval });
 
         } catch (e: any) {
-          const errorMessage = e?.message || '未知错误';
-          return `❌ 获取二维码失败：${errorMessage}`;
+          return `❌ 获取二维码失败：${e?.message || '未知错误'}`;
         }
       } else if (type === 'cookies') {
-        await session.send('请在30秒内发送你的Cookies字符串（可从浏览器开发者工具获取）：');
+        await session?.send?.('请在30秒内发送你的Cookies字符串（可从浏览器开发者工具获取）：');
         
         try {
-          const response = await session.prompt(30000);
+          const response = await session?.prompt?.(30000);
           if (!response) {
             return '⏰ 输入超时';
           }
           
-          const newCookies = response.trim();
+          const newCookies = response?.toString?.()?.trim?.() || '';
           if (!newCookies.includes('uin=') || !newCookies.includes('skey=')) {
             return '❌ 无效的Cookies格式，需要包含 uin 和 skey 字段';
           }
           
-          ctx.qqMusic.updateCookies(newCookies);
-          config.cookies = newCookies;
+          ctx?.qqMusic?.updateCookies?.(newCookies);
           
           return '✅ Cookies已更新并保存到配置';
         } catch (e) {
@@ -941,19 +956,18 @@ export function apply(ctx: Context, config: ConfigType) {
     });
 
   // 点歌命令（正则匹配）
-  const commandPrefix = config.commandPrefix || '点歌';
-  const musicPattern = new RegExp(`^${commandPrefix}\\s*[+\\-]?\\s*(.+)$`);
+  const musicPattern = new RegExp(`^${config?.commandPrefix || '点歌'}\\s*[+\\-]?\\s*(.+)$`);
   
   ctx.middleware(async (session, next) => {
-    const content: string = session.content?.trim() || '';
-    if (!content) return next();
+    const content = session?.content?.trim?.();
+    if (!content) return next?.();
 
     const match = content.match(musicPattern);
-    if (!match) return next();
+    if (!match) return next?.();
 
-    const keyword = match[1].trim();
+    const keyword = match[1]?.trim?.();
     if (!keyword) {
-      await session.send(`请输入歌曲名，例如：${commandPrefix} 周杰伦 晴天`);
+      await session?.send?.(`请输入歌曲名，例如：${config?.commandPrefix || '点歌'} 周杰伦 晴天`);
       return;
     }
 
@@ -963,46 +977,50 @@ export function apply(ctx: Context, config: ConfigType) {
 
     const env = getEnvConfig(session);
     if (!env?.enabled) {
-      await session.send('❌ 当前环境已禁用点歌功能');
+      await session?.send?.('⛔ 当前环境已禁用点歌功能');
       return;
     }
 
     // 检查是否是选择数字
-    const sessionKey = `${session.userId}:${session.guildId || 'private'}`;
+    const userId = session?.userId;
+    const guildId = session?.guildId;
+    if (!userId) return;
+    
+    const sessionKey = `${userId}:${guildId || 'private'}`;
     const searchSession = searchSessions.get(sessionKey);
     
     if (searchSession && /^\\d+$/.test(content)) {
       const num = parseInt(content);
       if (num === 0) {
         searchSessions.delete(sessionKey);
-        await session.send('已取消选择');
+        await session?.send?.('已取消选择');
         return;
       }
-      if (num >= 1 && num <= searchSession.songs.length) {
+      if (num >= 1 && num <= (searchSession?.songs?.length || 0)) {
         searchSessions.delete(sessionKey);
         const result = await playSong(session, searchSession.songs[num - 1]);
-        if (result) await session.send(result);
+        if (result) await session?.send?.(result);
         return;
       }
     }
 
     // 执行搜索
-    await session.send('🔍 搜索中...');
+    await session?.send?.('🔍 搜索中...');
     
     try {
       const maxResults = env?.maxResults || 5;
-      const songs = await ctx.qqMusic.search(keyword, maxResults);
+      const songs = await ctx?.qqMusic?.search?.(keyword, maxResults);
       
-      if (songs.length === 0) {
-        await session.send('❌ 未找到相关歌曲');
+      if (!songs || songs.length === 0) {
+        await session?.send?.('⛔ 未找到相关歌曲');
         return;
       }
 
       await sendSearchResult(session, songs, keyword);
       
     } catch (err: any) {
-      ctx.logger.error('点歌失败:', err);
-      await session.send('❌ 搜索失败，请检查Cookies是否有效');
+      ctx?.logger?.error?.('点歌失败:', err);
+      await session?.send?.('⛔ 搜索失败，请检查Cookies是否有效');
     }
   });
 
@@ -1010,17 +1028,17 @@ export function apply(ctx: Context, config: ConfigType) {
   ctx.command('qqmusic.status', '查看点歌系统状态', { authority: 3 })
     .action(async () => {
       try {
-        const cacheDir = ctx.qqMusic.getCacheDir();
-        const files = await fs.readdir(cacheDir).catch(() => [] as string[]);
+        const cacheDir = ctx?.qqMusic?.getCacheDir?.();
+        const files = await fs.readdir(cacheDir || '').catch(() => [] as string[]);
         let size = 0;
         for (const file of files) {
           try {
-            const stat = await fs.stat(path.join(cacheDir, file));
+            const stat = await fs.stat(path.join(cacheDir || '', file));
             size += stat.size;
           } catch {}
         }
         
-        const cookiePreview = config.cookies 
+        const cookiePreview = config?.cookies 
           ? `${config.cookies.substring(0, 50)}...` 
           : '未设置';
         
@@ -1029,9 +1047,9 @@ export function apply(ctx: Context, config: ConfigType) {
           `Cookies: ${cookiePreview}`,
           `缓存文件: ${files.length} 个`,
           `缓存大小: ${(size / 1024 / 1024).toFixed(1)} MB`,
-          `下载目录: ${config.downloadDir}`,
-          `群聊: ${config.group?.enabled ? '✅' : '❌'}`,
-          `私聊: ${config.private?.enabled ? '✅' : '❌'}`,
+          `下载目录: ${config?.downloadDir || 'data/music-qq'}`,
+          `群聊: ${config?.group?.enabled ? '✅' : '❌'}`,
+          `私聊: ${config?.private?.enabled ? '✅' : '❌'}`,
         ].join('\\n');
       } catch (error: any) {
         return '❌ 读取状态失败';
@@ -1041,7 +1059,7 @@ export function apply(ctx: Context, config: ConfigType) {
   // 管理命令：清理缓存
   ctx.command('qqmusic.clean', '手动清理缓存', { authority: 3 })
     .action(async () => {
-      await ctx.qqMusic.cleanCache();
+      await ctx?.qqMusic?.cleanCache?.();
       return '✅ 缓存清理完成';
     });
 
@@ -1049,8 +1067,7 @@ export function apply(ctx: Context, config: ConfigType) {
   ctx.command('qqmusic.setcookies <cookies:text>', '更新Cookies', { authority: 4 })
     .action(async ({ session }, cookies) => {
       if (!cookies) return '请提供Cookies';
-      ctx.qqMusic.updateCookies(cookies);
-      config.cookies = cookies;
+      ctx?.qqMusic?.updateCookies?.(cookies);
       return '✅ Cookies已更新';
     });
 }
