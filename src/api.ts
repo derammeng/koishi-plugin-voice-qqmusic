@@ -11,7 +11,7 @@ export class QQMusicInternalAPI {
   private uin: string = '0';
 
   constructor(cookies: string = '', logger?: Logger) {
-    this.cookies = cookies;
+    this.cookies = cookies || '';
     this.apiLogger = logger || console as unknown as Logger;
     this.guid = this.generateGuid();
     this.http = axios.create({
@@ -26,7 +26,7 @@ export class QQMusicInternalAPI {
   }
 
   updateCookies(cookies: string): void {
-    this.cookies = cookies;
+    this.cookies = cookies || '';
     this.http.defaults.headers['Cookie'] = cookies;
     this.extractUin();
   }
@@ -36,7 +36,7 @@ export class QQMusicInternalAPI {
   }
 
   private extractUin(): void {
-    const match = this.cookies.match(/uin=o?(\d+)/);
+    const match = this.cookies?.match(/uin=o?(\\d+)/);
     this.uin = match ? match[1] : '0';
   }
 
@@ -61,7 +61,7 @@ export class QQMusicInternalAPI {
       flag_qc: 0,
       p: 1,
       n: pageSize,
-      w: keyword,
+      w: keyword || '',
       g_tk: 5381,
       loginUin: this.uin,
       hostUin: 0,
@@ -78,29 +78,29 @@ export class QQMusicInternalAPI {
       
       let jsonData = data;
       if (typeof data === 'string') {
-        const jsonStr = data.replace(/^(?:MusicJsonCallback|callback)\(/, '').replace(/\);\s*$/, '');
+        const jsonStr = data.replace(/^(?:MusicJsonCallback|callback)\\(/, '').replace(/\\);\\s*$/, '');
         jsonData = JSON.parse(jsonStr);
       }
 
-      if (!jsonData.data?.song?.list) {
+      if (!jsonData?.data?.song?.list) {
         return [];
       }
 
       return jsonData.data.song.list.map((song: any) => ({
-        songmid: song.mid,
-        songname: song.name,
-        singer: song.singer?.map((s: any) => ({ name: s.name })) || [],
-        albumname: song.album?.name || '未知专辑',
-        albummid: song.album?.mid || '',
-        interval: song.interval || 0,
-        songid: song.id,
-        pay: song.pay || {},
-        size128: song.file?.size_128mp3 || 0,
-        size320: song.file?.size_320mp3 || 0,
-        sizeflac: song.file?.size_flac || 0,
+        songmid: song?.mid || '',
+        songname: song?.name || '未知歌曲',
+        singer: song?.singer?.map((s: any) => ({ name: s?.name || '' })) || [],
+        albumname: song?.album?.name || '未知专辑',
+        albummid: song?.album?.mid || '',
+        interval: song?.interval || 0,
+        songid: song?.id || 0,
+        pay: song?.pay || {},
+        size128: song?.file?.size_128mp3 || 0,
+        size320: song?.file?.size_320mp3 || 0,
+        sizeflac: song?.file?.size_flac || 0,
       }));
     } catch (error: any) {
-      this.apiLogger.error('搜索失败:', error.message);
+      this.apiLogger.error('搜索失败:', error?.message || error);
       throw error;
     }
   }
@@ -134,8 +134,8 @@ export class QQMusicInternalAPI {
     try {
       const { data } = await this.http.post('https://u.y.qq.com/cgi-bin/musicu.fcg', reqData);
       
-      const midUrlInfo = data.req_0?.data?.midurlinfo?.[0];
-      if (!midUrlInfo || !midUrlInfo.purl) {
+      const midUrlInfo = data?.req_0?.data?.midurlinfo?.[0];
+      if (!midUrlInfo?.purl) {
         return { url: null, quality: 0 };
       }
 
@@ -144,12 +144,13 @@ export class QQMusicInternalAPI {
       
       return { url, quality: actualQuality };
     } catch (error: any) {
-      this.apiLogger.error('获取播放链接失败:', error.message);
+      this.apiLogger.error('获取播放链接失败:', error?.message || error);
       return { url: null, quality: 0 };
     }
   }
 
   private getQualityFromUrl(purl: string): number {
+    if (!purl) return 128;
     if (purl.includes('F000')) return 999;
     if (purl.includes('M800')) return 320;
     return 128;
@@ -159,7 +160,7 @@ export class QQMusicInternalAPI {
   async getLyric(songmid: string): Promise<{ lyric: string | null; trans: string | null }> {
     const url = 'https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg';
     const params = {
-      songmid,
+      songmid: songmid || '',
       pcachetime: Date.now(),
       g_tk: 5381,
       loginUin: this.uin,
@@ -177,70 +178,17 @@ export class QQMusicInternalAPI {
       
       let jsonData = data;
       if (typeof data === 'string') {
-        const jsonStr = data.replace(/^(?:MusicJsonCallback|callback)\(/, '').replace(/\);\s*$/, '');
+        const jsonStr = data.replace(/^(?:MusicJsonCallback|callback)\\(/, '').replace(/\\);\\s*$/, '');
         jsonData = JSON.parse(jsonStr);
       }
 
-      const lyric = jsonData.lyric ? Buffer.from(jsonData.lyric, 'base64').toString('utf-8') : null;
-      const trans = jsonData.trans ? Buffer.from(jsonData.trans, 'base64').toString('utf-8') : null;
+      const lyric = jsonData?.lyric ? Buffer.from(jsonData.lyric, 'base64').toString('utf-8') : null;
+      const trans = jsonData?.trans ? Buffer.from(jsonData.trans, 'base64').toString('utf-8') : null;
 
       return { lyric, trans };
     } catch (error: any) {
-      this.apiLogger.error('获取歌词失败:', error.message);
+      this.apiLogger.error('获取歌词失败:', error?.message || error);
       return { lyric: null, trans: null };
-    }
-  }
-
-  // 获取歌曲详情
-  async getSongInfo(songmid: string): Promise<any> {
-    const url = 'https://c.y.qq.com/v8/fcg-bin/fcg_play_single_song.fcg';
-    const params = {
-      songmid,
-      format: 'json',
-      inCharset: 'utf8',
-      outCharset: 'utf-8',
-      notice: 0,
-      platform: 'yqq',
-      needNewCode: 0,
-    };
-
-    try {
-      const { data } = await this.http.get(url, { params });
-      return data.data?.[0] || null;
-    } catch (error: any) {
-      this.apiLogger.error('获取歌曲详情失败:', error.message);
-      return null;
-    }
-  }
-
-  // 获取用户歌单
-  async getUserPlaylists(): Promise<any[]> {
-    if (this.uin === '0') return [];
-    
-    const url = 'https://c.y.qq.com/rsc/fcgi-bin/fcg_user_created_diss';
-    const params = {
-      cv: 10000,
-      ct: 24,
-      format: 'json',
-      inCharset: 'utf-8',
-      outCharset: 'utf-8',
-      notice: 0,
-      platform: 'yqq.json',
-      needNewCode: 0,
-      uin: this.uin,
-      hostUin: this.uin,
-      sin: 0,
-      ein: 19,
-      sort: 2,
-      g_tk: 5381,
-    };
-
-    try {
-      const { data } = await this.http.get(url, { params });
-      return data.data?.data?.disslist || [];
-    } catch (error: any) {
-      this.apiLogger.error('获取歌单失败:', error.message);
-      return [];
     }
   }
 }
