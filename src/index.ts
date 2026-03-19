@@ -42,7 +42,7 @@ function formatTime(s: number): string {
 }
 
 function sanitizeFilename(name: string): string {
-  return name.replace(/[\\/:*?"<>|]/g, '_');
+  return name.replace(/[\\\\/:*?"<>|]/g, '_');
 }
 
 // Canvas 渲染服务
@@ -526,27 +526,27 @@ const PrivateConfig = Schema.object({
 
 const UsageExampleConfig = Schema.object({
   example: Schema.string().role('textarea').default(
-    '🎵 QQ音乐点歌插件使用说明\n\n' +
-    '【点歌命令】\n' +
-    '点歌 + 歌曲名\n' +
-    '例如：点歌 周杰伦晴天\n' +
-    '      点歌 陈奕迅 十年\n\n' +
-    '【登录命令】\n' +
-    '登录 扫码 - 扫码登录QQ音乐\n' +
-    '登录 cookies - 手动输入Cookies\n\n' +
-    '【选择歌曲】\n' +
-    '搜索后回复数字 1-N 选择\n' +
-    '回复 0 取消选择\n\n' +
-    '【模板变量】\n' +
-    '{musicname} - 歌曲名称\n' +
-    '{singer}    - 歌手名称\n' +
-    '{album}     - 专辑名称\n' +
-    '{img}       - 专辑封面图片\n\n' +
-    '【文本格式变量】\n' +
-    '{n}         - 序号\n' +
-    '{name}      - 歌曲名\n' +
-    '{singer}    - 歌手\n' +
-    '{album}     - 专辑\n' +
+    '🎵 QQ音乐点歌插件使用说明\\n\\n' +
+    '【点歌命令】\\n' +
+    '点歌 + 歌曲名\\n' +
+    '例如：点歌 周杰伦晴天\\n' +
+    '      点歌 陈奕迅 十年\\n\\n' +
+    '【登录命令】\\n' +
+    '登录 扫码 - 扫码登录QQ音乐\\n' +
+    '登录 cookies - 手动输入Cookies\\n\\n' +
+    '【选择歌曲】\\n' +
+    '搜索后回复数字 1-N 选择\\n' +
+    '回复 0 取消选择\\n\\n' +
+    '【模板变量】\\n' +
+    '{musicname} - 歌曲名称\\n' +
+    '{singer}    - 歌手名称\\n' +
+    '{album}     - 专辑名称\\n' +
+    '{img}       - 专辑封面图片\\n\\n' +
+    '【文本格式变量】\\n' +
+    '{n}         - 序号\\n' +
+    '{name}      - 歌曲名\\n' +
+    '{singer}    - 歌手\\n' +
+    '{album}     - 专辑\\n' +
     '{duration}  - 时长'
   ).disabled().description('使用说明'),
 });
@@ -822,7 +822,7 @@ export function apply(ctx: Context, config: ConfigType) {
           }
           
           if (env.lyrics.sendAsForward) {
-            const lines = text.split('\n').filter((l: string) => l.trim());
+            const lines = text.split('\\n').filter((l: string) => l.trim());
             const chunks: string[][] = [];
             for (let i = 0; i < lines.length; i += 20) {
               chunks.push(lines.slice(i, i + 20));
@@ -832,12 +832,12 @@ export function apply(ctx: Context, config: ConfigType) {
               h('message', { 
                 userId: session.selfId, 
                 nickname: '歌词' 
-              }, `📜 歌词 (${i + 1}/${chunks.length}):\n${chunk.join('\n')}`)
+              }, `📜 歌词 (${i + 1}/${chunks.length}):\\n${chunk.join('\\n')}`)
             );
             
             await session.send(h('message', { forward: true }, nodes));
           } else {
-            await session.send(`📜 歌词：\n${text}`);
+            await session.send(`📜 歌词：\\n${text}`);
           }
         }
       }
@@ -881,7 +881,8 @@ export function apply(ctx: Context, config: ConfigType) {
                 ctx.qqMusic.updateCookies(result.cookies);
                 config.cookies = result.cookies;
                 
-                await session.send(`✅ 登录成功！${result.nickname ?? ''}\nCookies已自动保存到配置中。`);
+                const nickname = result.nickname || '';
+                await session.send(`✅ 登录成功！${nickname ? `欢迎，${nickname}` : ''}\\nCookies已自动保存到配置中。`);
               } else if (result.status === 'expired') {
                 clearInterval(interval);
                 qrLoginSessions.delete(userId);
@@ -889,10 +890,12 @@ export function apply(ctx: Context, config: ConfigType) {
               } else if (result.status === 'error') {
                 clearInterval(interval);
                 qrLoginSessions.delete(userId);
-                await session.send(`❌ 登录失败：${result.msg ?? '未知错误'}`);
+                const errorMsg = result.msg || '未知错误';
+                await session.send(`❌ 登录失败：${errorMsg}`);
               }
             } catch (e: any) {
-              ctx.logger.error('轮询失败:', e.message ?? '未知错误');
+              const errorMessage = e?.message || '未知错误';
+              ctx.logger.error('轮询失败:', errorMessage);
             }
           }, 2000);
 
@@ -908,7 +911,8 @@ export function apply(ctx: Context, config: ConfigType) {
           qrLoginSessions.set(userId, { qrsig, interval });
 
         } catch (e: any) {
-          return `❌ 获取二维码失败：${e.message}`;
+          const errorMessage = e?.message || '未知错误';
+          return `❌ 获取二维码失败：${errorMessage}`;
         }
       } else if (type === 'cookies') {
         await session.send('请在30秒内发送你的Cookies字符串（可从浏览器开发者工具获取）：');
@@ -937,11 +941,11 @@ export function apply(ctx: Context, config: ConfigType) {
     });
 
   // 点歌命令（正则匹配）
-  const commandPrefix = (config.commandPrefix ?? '点歌') as string;
+  const commandPrefix = config.commandPrefix || '点歌';
   const musicPattern = new RegExp(`^${commandPrefix}\\s*[+\\-]?\\s*(.+)$`);
   
   ctx.middleware(async (session, next) => {
-    const content = (session.content?.trim() ?? '') as string;
+    const content: string = session.content?.trim() || '';
     if (!content) return next();
 
     const match = content.match(musicPattern);
@@ -967,7 +971,7 @@ export function apply(ctx: Context, config: ConfigType) {
     const sessionKey = `${session.userId}:${session.guildId || 'private'}`;
     const searchSession = searchSessions.get(sessionKey);
     
-    if (searchSession && /^\d+$/.test(content)) {
+    if (searchSession && /^\\d+$/.test(content)) {
       const num = parseInt(content);
       if (num === 0) {
         searchSessions.delete(sessionKey);
@@ -1028,7 +1032,7 @@ export function apply(ctx: Context, config: ConfigType) {
           `下载目录: ${config.downloadDir}`,
           `群聊: ${config.group?.enabled ? '✅' : '❌'}`,
           `私聊: ${config.private?.enabled ? '✅' : '❌'}`,
-        ].join('\n');
+        ].join('\\n');
       } catch (error: any) {
         return '❌ 读取状态失败';
       }
