@@ -937,11 +937,11 @@ export function apply(ctx: Context, config: ConfigType) {
     });
 
   // 点歌命令（正则匹配）
-  const commandPrefix = config.commandPrefix || '点歌';
+  const commandPrefix = (config.commandPrefix ?? '点歌') as string;
   const musicPattern = new RegExp(`^${commandPrefix}\\s*[+\\-]?\\s*(.+)$`);
   
   ctx.middleware(async (session, next) => {
-    const content = session.content?.trim() ?? '';
+    const content = (session.content?.trim() ?? '') as string;
     if (!content) return next();
 
     const match = content.match(musicPattern);
