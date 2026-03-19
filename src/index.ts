@@ -171,8 +171,8 @@ class CanvasRenderService {
 
     let currentY = config.padding || 40;
 
-    // 绘制封面（如果模板包含 <img>）
-    if (template.includes('<img>')) {
+    // 绘制封面（如果模板包含 {img}）
+    if (template.includes('{img}')) {
       try {
         const coverResponse = await axios.get(song.cover, { responseType: 'arraybuffer' });
         const coverImage = await loadImage(Buffer.from(coverResponse.data));
@@ -194,7 +194,7 @@ class CanvasRenderService {
     }
 
     // 绘制歌曲名
-    if (template.includes('<musicname>')) {
+    if (template.includes('{musicname}')) {
       ctx.fillStyle = config.titleColor || '#ffffff';
       ctx.font = `bold ${config.titleSize || 40}px "Microsoft YaHei", sans-serif`;
       ctx.textAlign = 'center';
@@ -204,7 +204,7 @@ class CanvasRenderService {
     }
 
     // 绘制歌手
-    if (template.includes('<singer>')) {
+    if (template.includes('{singer}')) {
       ctx.fillStyle = config.artistColor || '#e0e0e0';
       ctx.font = `${config.artistSize || 28}px "Microsoft YaHei", sans-serif`;
       const singer = `🎤 ${song.singer}`;
@@ -213,7 +213,7 @@ class CanvasRenderService {
     }
 
     // 绘制专辑
-    if (template.includes('<album>')) {
+    if (template.includes('{album}')) {
       ctx.fillStyle = config.albumColor || '#cccccc';
       ctx.font = `${config.albumSize || 24}px "Microsoft YaHei", sans-serif`;
       const album = `💿 ${song.album}`;
@@ -538,10 +538,10 @@ const UsageExampleConfig = Schema.object({
     '搜索后回复数字 1-N 选择\n' +
     '回复 0 取消选择\n\n' +
     '【模板变量】\n' +
-    '<musicname> - 歌曲名称\n' +
-    '<singer>    - 歌手名称\n' +
-    '<album>     - 专辑名称\n' +
-    '<img>       - 专辑封面图片\n\n' +
+    '{musicname} - 歌曲名称\n' +
+    '{singer}    - 歌手名称\n' +
+    '{album}     - 专辑名称\n' +
+    '{img}       - 专辑封面图片\n\n' +
     '【文本格式变量】\n' +
     '{n}         - 序号\n' +
     '{name}      - 歌曲名\n' +
@@ -937,10 +937,11 @@ export function apply(ctx: Context, config: ConfigType) {
     });
 
   // 点歌命令（正则匹配）
-  const musicPattern = new RegExp(`^${config.commandPrefix}\\s*[+\\-]?\\s*(.+)$`);
+  const commandPrefix = config.commandPrefix || '点歌';
+  const musicPattern = new RegExp(`^${commandPrefix}\\s*[+\\-]?\\s*(.+)$`);
   
   ctx.middleware(async (session, next) => {
-    const content = session.content?.trim();
+    const content = session.content?.trim() || '';
     if (!content) return next();
 
     const match = content.match(musicPattern);
@@ -948,7 +949,7 @@ export function apply(ctx: Context, config: ConfigType) {
 
     const keyword = match[1].trim();
     if (!keyword) {
-      await session.send(`请输入歌曲名，例如：${config.commandPrefix} 周杰伦 晴天`);
+      await session.send(`请输入歌曲名，例如：${commandPrefix} 周杰伦 晴天`);
       return;
     }
 
