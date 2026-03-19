@@ -1,19 +1,18 @@
 // src/api.ts
 import axios, { AxiosInstance } from 'axios';
-import * as crypto from 'crypto';
 import { Logger } from 'koishi';
 
 // QQ音乐 API 内部实现
 export class QQMusicInternalAPI {
   private http: AxiosInstance;
   private cookies: string;
-  private logger: Logger;
+  private apiLogger: Logger;
   private guid: string;
   private uin: string = '0';
 
   constructor(cookies: string = '', logger?: Logger) {
     this.cookies = cookies;
-    this.logger = logger || console as any;
+    this.apiLogger = logger || console as unknown as Logger;
     this.guid = this.generateGuid();
     this.http = axios.create({
       timeout: 30000,
@@ -101,7 +100,7 @@ export class QQMusicInternalAPI {
         sizeflac: song.file?.size_flac || 0,
       }));
     } catch (error: any) {
-      this.logger.error('搜索失败:', error.message);
+      this.apiLogger.error('搜索失败:', error.message);
       throw error;
     }
   }
@@ -145,7 +144,7 @@ export class QQMusicInternalAPI {
       
       return { url, quality: actualQuality };
     } catch (error: any) {
-      this.logger.error('获取播放链接失败:', error.message);
+      this.apiLogger.error('获取播放链接失败:', error.message);
       return { url: null, quality: 0 };
     }
   }
@@ -187,7 +186,7 @@ export class QQMusicInternalAPI {
 
       return { lyric, trans };
     } catch (error: any) {
-      this.logger.error('获取歌词失败:', error.message);
+      this.apiLogger.error('获取歌词失败:', error.message);
       return { lyric: null, trans: null };
     }
   }
@@ -209,7 +208,7 @@ export class QQMusicInternalAPI {
       const { data } = await this.http.get(url, { params });
       return data.data?.[0] || null;
     } catch (error: any) {
-      this.logger.error('获取歌曲详情失败:', error.message);
+      this.apiLogger.error('获取歌曲详情失败:', error.message);
       return null;
     }
   }
@@ -240,7 +239,7 @@ export class QQMusicInternalAPI {
       const { data } = await this.http.get(url, { params });
       return data.data?.data?.disslist || [];
     } catch (error: any) {
-      this.logger.error('获取歌单失败:', error.message);
+      this.apiLogger.error('获取歌单失败:', error.message);
       return [];
     }
   }
