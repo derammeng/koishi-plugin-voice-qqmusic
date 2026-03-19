@@ -78,7 +78,7 @@ export class QQMusicInternalAPI {
       
       let jsonData = data;
       if (typeof data === 'string') {
-        const jsonStr = data.replace(/^(?:MusicJsonCallback|callback)\\(/, '').replace(/\\);\\s*$/, '');
+        const jsonStr = data.replace(/^(?:MusicJsonCallback|callback)\(/, '').replace(/\);\s*$/, '');;
         jsonData = JSON.parse(jsonStr);
       }
 
@@ -178,7 +178,7 @@ export class QQMusicInternalAPI {
       
       let jsonData = data;
       if (typeof data === 'string') {
-        const jsonStr = data.replace(/^(?:MusicJsonCallback|callback)\\(/, '').replace(/\\);\\s*$/, '');
+        const jsonStr = data.replace(/^(?:MusicJsonCallback|callback)\(/, '').replace(/\);\s*$/, '');
         jsonData = JSON.parse(jsonStr);
       }
 
