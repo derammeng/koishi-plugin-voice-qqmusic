@@ -10,7 +10,7 @@ const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
 // 计算 ptqrtoken
 function getQRToken(qrsig: string): string {
   let e = 0;
-  for (let i = 0; i < qrsig.length; i++) {
+  for (let i = 0; i < (qrsig || '').length; i++) {
     e += (e << 5) + qrsig.charCodeAt(i);
   }
   return (2147483647 & e).toString();
@@ -19,7 +19,7 @@ function getQRToken(qrsig: string): string {
 // 解析 Cookie
 function parseCookie(cookieStr: string): Record<string, string> {
   const obj: Record<string, string> = {};
-  cookieStr.split(';').forEach(pair => {
+  (cookieStr || '').split(';').forEach(pair => {
     const [key, val] = pair.trim().split('=');
     if (key && val) obj[key] = val;
   });
@@ -67,21 +67,21 @@ export class QQMusicQRLogin {
         },
       });
 
-      // 提取 qrsig
-      const setCookie = response.headers['set-cookie'];
+      // 获取 qrsig
+      const setCookie = response?.headers?.['set-cookie'];
       if (!setCookie || !Array.isArray(setCookie)) {
         throw new Error('未获取到 set-cookie');
       }
 
-      const qrsigCookie = setCookie.find(c => c.startsWith('qrsig='));
+      const qrsigCookie = setCookie.find(c => c?.startsWith('qrsig='));
       if (!qrsigCookie) throw new Error('未找到 qrsig');
 
-      const qrsig = qrsigCookie.split(';')[0].split('=')[1];
-      const qrBase64 = `data:image/png;base64,${Buffer.from(response.data).toString('base64')}`;
+      const qrsig = qrsigCookie.split(';')[0]?.split('=')[1] || '';
+      const qrBase64 = `data:image/png;base64,${Buffer.from(response?.data || []).toString('base64')}`;
 
       return { qrsig, qrBase64 };
     } catch (error: any) {
-      this.qrLogger.error('获取二维码失败:', error.message);
+      this.qrLogger.error('获取二维码失败:', error?.message || error);
       throw error;
     }
   }
@@ -111,7 +111,7 @@ export class QQMusicQRLogin {
       const { data } = await axios.get('https://ssl.ptlogin2.qq.com/ptqrlogin', {
         params,
         headers: {
-          Cookie: `qrsig=${qrsig}`,
+          Cookie: `qrsig=${qrsig || ''}`,
           Referer: 'https://xui.ptlogin2.qq.com/',
           'User-Agent': USER_AGENT,
         },
@@ -120,7 +120,7 @@ export class QQMusicQRLogin {
       });
 
       // 解析返回数据 ptuiCB('0','0','url','0','msg','nickname')
-      const match = data.match(/ptuiCB\((.*)\)/);
+      const match = (data || '').match(/ptuiCB\\((.*)\\)/);
       if (!match) throw new Error('解析响应失败');
 
       const args = JSON.parse(`[${match[1]}]`);
@@ -148,15 +148,15 @@ export class QQMusicQRLogin {
           return { status: 'error', msg: msg || '未知错误' };
       }
     } catch (error: any) {
-      this.qrLogger.error('检查二维码状态失败:', error.message);
-      return { status: 'error', msg: error.message };
+      this.qrLogger.error('检查二维码状态失败:', error?.message || error);
+      return { status: 'error', msg: error?.message || '未知错误' };
     }
   }
 
   // 从重定向 URL 获取 Cookies
   private async getCookiesFromRedirect(redirectUrl: string): Promise<string> {
     try {
-      const response = await axios.get(redirectUrl, {
+      const response = await axios.get(redirectUrl || '', {
         maxRedirects: 5,
         headers: {
           'User-Agent': USER_AGENT,
@@ -167,7 +167,7 @@ export class QQMusicQRLogin {
       // 收集所有 cookies
       const cookies: string[] = [];
       
-      if (response.headers['set-cookie']) {
+      if (response?.headers?.['set-cookie']) {
         cookies.push(...response.headers['set-cookie']);
       }
 
@@ -176,20 +176,20 @@ export class QQMusicQRLogin {
       
       // 构建标准格式的 cookie 字符串
       const essentialCookies = [
-        `uin=o${cookieObj['uin'] || cookieObj['qq_uin'] || ''}`,
-        `skey=${cookieObj['skey'] || ''}`,
-        `p_skey=${cookieObj['p_skey'] || ''}`,
-        `p_uin=${cookieObj['p_uin'] || ''}`,
-        `pt4_token=${cookieObj['pt4_token'] || ''}`,
-        `musickey=${cookieObj['musickey'] || cookieObj['qqmusic_key'] || ''}`,
-        `psrf_qqopenid=${cookieObj['psrf_qqopenid'] || ''}`,
-        `psrf_qqaccess_token=${cookieObj['psrf_qqaccess_token'] || ''}`,
-        `psrf_qqunionid=${cookieObj['psrf_qqunionid'] || ''}`,
-      ].filter(c => !c.endsWith('=') && !c.endsWith('=undefined'));
+        `uin=o${cookieObj?.['uin'] || cookieObj?.['qq_uin'] || ''}`,
+        `skey=${cookieObj?.['skey'] || ''}`,
+        `p_skey=${cookieObj?.['p_skey'] || ''}`,
+        `p_uin=${cookieObj?.['p_uin'] || ''}`,
+        `pt4_token=${cookieObj?.['pt4_token'] || ''}`,
+        `musickey=${cookieObj?.['musickey'] || cookieObj?.['qqmusic_key'] || ''}`,
+        `psrf_qqopenid=${cookieObj?.['psrf_qqopenid'] || ''}`,
+        `psrf_qqaccess_token=${cookieObj?.['psrf_qqaccess_token'] || ''}`,
+        `psrf_qqunionid=${cookieObj?.['psrf_qqunionid'] || ''}`,
+      ].filter(c => !c?.endsWith('=') && !c?.endsWith('=undefined'));
 
       return essentialCookies.join('; ');
     } catch (error: any) {
-      this.qrLogger.error('获取 Cookies 失败:', error.message);
+      this.qrLogger.error('获取 Cookies 失败:', error?.message || error);
       throw error;
     }
   }
