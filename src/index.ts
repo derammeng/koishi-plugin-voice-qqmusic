@@ -881,7 +881,7 @@ export function apply(ctx: Context, config: ConfigType) {
                 ctx.qqMusic.updateCookies(result.cookies);
                 config.cookies = result.cookies;
                 
-                await session.send(`✅ 登录成功！${result.nickname ? `欢迎，${result.nickname}` : ''}\nCookies已自动保存到配置中。`);
+                await session.send(`✅ 登录成功！${result.nickname ?? ''}\nCookies已自动保存到配置中。`);
               } else if (result.status === 'expired') {
                 clearInterval(interval);
                 qrLoginSessions.delete(userId);
@@ -889,10 +889,10 @@ export function apply(ctx: Context, config: ConfigType) {
               } else if (result.status === 'error') {
                 clearInterval(interval);
                 qrLoginSessions.delete(userId);
-                await session.send(`❌ 登录失败：${result.msg}`);
+                await session.send(`❌ 登录失败：${result.msg ?? '未知错误'}`);
               }
             } catch (e: any) {
-              ctx.logger.error('轮询失败:', e);
+              ctx.logger.error('轮询失败:', e.message ?? '未知错误');
             }
           }, 2000);
 
@@ -941,7 +941,7 @@ export function apply(ctx: Context, config: ConfigType) {
   const musicPattern = new RegExp(`^${commandPrefix}\\s*[+\\-]?\\s*(.+)$`);
   
   ctx.middleware(async (session, next) => {
-    const content = session.content?.trim() || '';
+    const content = session.content?.trim() ?? '';
     if (!content) return next();
 
     const match = content.match(musicPattern);
