@@ -5,7 +5,14 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { createCanvas, loadImage, CanvasRenderingContext2D } from 'canvas';
 import { QQMusicInternalAPI } from './api';
-import { QQMusicQRLogin, QRStatusResult } from './qrlogin';
+import { QQMusicQRLogin } from './qrlogin';
+
+// 声明模块扩展
+declare module 'koishi' {
+  interface Context {
+    qqMusic: QQMusicService;
+  }
+}
 
 // 类型定义
 interface SongInfo {
@@ -40,10 +47,10 @@ function sanitizeFilename(name: string): string {
 
 // Canvas 渲染服务
 class CanvasRenderService {
-  private logger: Logger;
+  private serviceLogger: Logger;
 
   constructor(logger: Logger) {
-    this.logger = logger;
+    this.serviceLogger = logger;
   }
 
   // 渲染搜索结果列表
@@ -181,7 +188,7 @@ class CanvasRenderService {
         
         currentY += imgSize + 30;
       } catch (e) {
-        this.logger.warn('封面加载失败');
+        this.serviceLogger.warn('封面加载失败');
         currentY += 40;
       }
     }
@@ -298,18 +305,18 @@ class QQMusicService extends Service {
   public qrLogin: QQMusicQRLogin;
   private cacheDir: string;
   private tempDir: string;
-  private logger: Logger;
+  private serviceLogger: Logger;
   private currentDownloads = 0;
   private downloadQueue: Array<() => void> = [];
   private maxConcurrent: number;
-  private config: any;
+  private serviceConfig: any;
 
   constructor(ctx: Context, config: any) {
     super(ctx, 'qqMusic', true);
-    this.config = config;
-    this.logger = ctx.logger('qq-music');
-    this.api = new QQMusicInternalAPI(config.cookies, this.logger);
-    this.qrLogin = new QQMusicQRLogin(this.logger);
+    this.serviceConfig = config;
+    this.serviceLogger = ctx.logger('qq-music');
+    this.api = new QQMusicInternalAPI(config.cookies || '', this.serviceLogger);
+    this.qrLogin = new QQMusicQRLogin(this.serviceLogger);
     this.maxConcurrent = config.concurrentDownloads || 3;
     
     // 设置目录
@@ -353,7 +360,7 @@ class QQMusicService extends Service {
   // 搜索歌曲
   async search(keyword: string, limit: number = 5): Promise<SongInfo[]> {
     const list = await this.api.search(keyword, limit);
-    return list.map(song => ({
+    return list.map((song: any) => ({
       mid: song.songmid,
       name: song.songname,
       singer: song.singer.map((s: any) => s.name).join('/'),
@@ -377,7 +384,7 @@ class QQMusicService extends Service {
     try {
       const { url } = await this.api.getSongUrl(songMid, quality);
       if (!url) {
-        this.logger.debug(`无法获取播放链接: ${songName}`);
+        this.serviceLogger.debug(`无法获取播放链接: ${songName}`);
         return null;
       }
 
@@ -405,7 +412,7 @@ class QQMusicService extends Service {
 
       return filePath;
     } catch (error: any) {
-      this.logger.error('下载失败:', error.message);
+      this.serviceLogger.error('下载失败:', error.message);
       return null;
     } finally {
       this.currentDownloads--;
@@ -432,12 +439,12 @@ class QQMusicService extends Service {
           const stats = await fs.stat(filePath);
           if (now - stats.mtimeMs > maxAge) {
             await fs.unlink(filePath);
-            this.logger.info('清理过期缓存:', file);
+            this.serviceLogger.info('清理过期缓存:', file);
           }
         } catch {}
       }
     } catch (error: any) {
-      this.logger.error('清理缓存失败:', error.message);
+      this.serviceLogger.error('清理缓存失败:', error.message);
     }
   }
 }
@@ -544,21 +551,22 @@ const UsageExampleConfig = Schema.object({
   ).disabled().description('使用说明'),
 });
 
-export interface Config {
+// 配置类型定义
+interface ConfigType {
   cookies: string;
   port: number;
   downloadDir: string;
-  defaultQuality: number;
+  defaultQuality: 128 | 320 | 999;
+  commandPrefix: string;
   group: any;
   private: any;
   cache: any;
   usage: any;
   adminUsers: string[];
   blacklist: string[];
-  commandPrefix: string;
 }
 
-export const Config: Schema<Config> = Schema.intersect([
+export const Config: Schema<ConfigType> = Schema.intersect([
   Schema.object({
     cookies: Schema.string().role('textarea').default('').description(
       'QQ音乐Cookies（扫码登录后会自动更新，也可手动粘贴）'
@@ -573,15 +581,15 @@ export const Config: Schema<Config> = Schema.intersect([
       Schema.const(999).description('无损 FLAC')
     ]).default(128).description('默认音质'),
     commandPrefix: Schema.string().default('点歌').description('点歌命令前缀（正则匹配）'),
-  }).description('基础配置'),
-  Schema.object({ group: GroupConfig }).description('群聊设置'),
-  Schema.object({ private: PrivateConfig }).description('私聊设置'),
-  Schema.object({ cache: CacheConfig }).description('缓存设置'),
-  Schema.object({ usage: UsageExampleConfig }).description('使用说明'),
+  }),
+  Schema.object({ group: GroupConfig }),
+  Schema.object({ private: PrivateConfig }),
+  Schema.object({ cache: CacheConfig }),
+  Schema.object({ usage: UsageExampleConfig }),
   Schema.object({
     adminUsers: Schema.array(Schema.string()).default([]).description('管理员用户ID'),
     blacklist: Schema.array(Schema.string()).default([]).description('黑名单用户ID'),
-  }).description('权限设置'),
+  }),
 ]);
 
 export const name = 'koishi-plugin-voice-qqmusic';
@@ -594,10 +602,11 @@ const userLocks = new Set<string>();
 const searchSessions = new Map<string, SearchSession>();
 const qrLoginSessions = new Map<string, { qrsig: string; interval?: NodeJS.Timeout }>();
 
-export function apply(ctx: Context, config: Config) {
+export function apply(ctx: Context, config: ConfigType) {
   // 初始化服务
   ctx.plugin(QQMusicService, {
-    ...config,
+    cookies: config.cookies,
+    downloadDir: config.downloadDir,
     concurrentDownloads: 3,
   });
   
@@ -625,8 +634,7 @@ export function apply(ctx: Context, config: Config) {
   ctx.on('dispose', () => {
     clearInterval(cleanInterval);
     clearInterval(sessionCleaner);
-    // 清理所有QR登录轮询
-    for (const [key, session] of qrLoginSessions) {
+    for (const [, session] of qrLoginSessions) {
       if (session.interval) clearInterval(session.interval);
     }
   });
@@ -702,7 +710,6 @@ export function apply(ctx: Context, config: Config) {
         .replace(/{album}/g, song.album)
         .replace(/{duration}/g, formatTime(song.duration));
       
-      // 截断处理
       const maxLen = config.group?.text?.maxLength || 30;
       if (text.length > maxLen + 10) {
         text = text.substring(0, maxLen + 10) + '...';
@@ -737,8 +744,7 @@ export function apply(ctx: Context, config: Config) {
       const format = env.text?.format || '{n}. {name} ({singer})';
       const textList = buildTextList(songs, format);
       
-      // 构建合并转发消息
-      const forwardNodes = textList.map((text, i) => ({
+      const forwardNodes = textList.map((text) => ({
         type: 'node',
         data: {
           name: 'QQ音乐',
@@ -747,7 +753,6 @@ export function apply(ctx: Context, config: Config) {
         },
       }));
 
-      // 添加提示
       forwardNodes.push({
         type: 'node',
         data: {
@@ -757,12 +762,11 @@ export function apply(ctx: Context, config: Config) {
         },
       });
 
-      messages.push(h('message', { forward: true }, forwardNodes.map(n => 
+      messages.push(h('message', { forward: true }, forwardNodes.map((n: any) => 
         h('message', { userId: session.selfId, nickname: n.data.name }, n.data.content)
       )));
     }
 
-    // 发送所有消息
     for (const msg of messages) {
       await session.send(msg);
     }
@@ -818,18 +822,17 @@ export function apply(ctx: Context, config: Config) {
           }
           
           if (env.lyrics.sendAsForward) {
-            // 分段发送作为合并转发
-            const lines = text.split('\n').filter(l => l.trim());
-            const chunks = [];
+            const lines = text.split('\n').filter((l: string) => l.trim());
+            const chunks: string[][] = [];
             for (let i = 0; i < lines.length; i += 20) {
-              chunks.push(lines.slice(i, i + 20).join('\n'));
+              chunks.push(lines.slice(i, i + 20));
             }
             
             const nodes = chunks.map((chunk, i) => 
               h('message', { 
                 userId: session.selfId, 
                 nickname: '歌词' 
-              }, `📜 歌词 (${i + 1}/${chunks.length}):\n${chunk}`)
+              }, `📜 歌词 (${i + 1}/${chunks.length}):\n${chunk.join('\n')}`)
             );
             
             await session.send(h('message', { forward: true }, nodes));
@@ -857,7 +860,6 @@ export function apply(ctx: Context, config: Config) {
       const userId = session.userId;
 
       if (type === '扫码') {
-        // 清理之前的登录会话
         const existing = qrLoginSessions.get(userId);
         if (existing?.interval) clearInterval(existing.interval);
 
@@ -866,7 +868,6 @@ export function apply(ctx: Context, config: Config) {
           await session.send(h.image(qrBase64));
           await session.send('请使用手机QQ扫描上方二维码，有效期5分钟...');
 
-          // 开始轮询
           const interval = setInterval(async () => {
             try {
               const result = await ctx.qqMusic.qrLogin.checkQRCode(qrsig);
@@ -877,10 +878,7 @@ export function apply(ctx: Context, config: Config) {
                 clearInterval(interval);
                 qrLoginSessions.delete(userId);
                 
-                // 更新cookies
                 ctx.qqMusic.updateCookies(result.cookies);
-                
-                // 更新配置（同步到配置面板）
                 config.cookies = result.cookies;
                 
                 await session.send(`✅ 登录成功！${result.nickname ? `欢迎，${result.nickname}` : ''}\nCookies已自动保存到配置中。`);
@@ -898,7 +896,6 @@ export function apply(ctx: Context, config: Config) {
             }
           }, 2000);
 
-          // 5分钟超时
           setTimeout(() => {
             const s = qrLoginSessions.get(userId);
             if (s?.interval === interval) {
